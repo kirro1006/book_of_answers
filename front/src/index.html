@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TERMINAL - 解答之書 v2.0</title>
+  <style>
+    /* 基礎背景與文字設定 */
+    body {
+      background-color: #0b0b0f;
+      color: #00ff66;
+      font-family: 'Courier New', Courier, monospace;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    /* 模擬終端機視窗外殼 */
+    .terminal-window {
+      width: 700px;
+      height: 450px;
+      background-color: #16161e;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #2a2a3a;
+    }
+
+    /* 視窗上方控制列 */
+    .terminal-header {
+      background-color: #222230;
+      padding: 10px;
+      border-top-left-radius: 8px;
+      border-top-right-radius: 8px;
+      display: flex;
+      align-items: center;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .btn-red {
+      background-color: #ff5f56;
+    }
+
+    .btn-yellow {
+      background-color: #ffbd2e;
+    }
+
+    .btn-green {
+      background-color: #27c93f;
+    }
+
+    .window-title {
+      color: #787c99;
+      font-size: 12px;
+      margin-left: 20px;
+    }
+
+    /* 終端機內容文字區 */
+    .terminal-body {
+      padding: 20px;
+      flex-grow: 1;
+      overflow-y: auto;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    /* 歷史訊息與指令輸入區 */
+    .history {
+      margin-bottom: 10px;
+      white-space: pre-wrap;
+    }
+
+    .input-line {
+      display: flex;
+      align-items: center;
+    }
+
+    .prompt {
+      color: #00d2ff;
+      margin-right: 10px;
+    }
+
+    /* 隱藏原生輸入框樣式，使其融入背景 */
+    .cmd-input {
+      background: none;
+      border: none;
+      color: #00ff66;
+      font-family: inherit;
+      font-size: inherit;
+      flex-grow: 1;
+      outline: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="terminal-window">
+    <div class="terminal-header">
+      <div class="buttons">
+        <div class="btn btn-red"></div>
+        <div class="btn btn-yellow"></div>
+        <div class="btn btn-green"></div>
+      </div>
+      <div class="window-title">bash - python_final_project.sh</div>
+    </div>
+    <div class="terminal-body" id="terminalBody">
+      <div class="history" id="outputHistory">==================================================
+        🌟 歡迎來到【AI 解答之書】終端機系統 🌟
+        ==================================================
+        你可以輸入任何問題，或是輸入指令：
+        /random - 隨機獲得宇宙的一則啟示
+        /help - 顯示功能說明
+
+        請在下方輸入你的迷惘（按下 Enter 送出問卜）...</div>
+      <div class="input-line">
+        <span class="prompt">user@universe:~$</span>
+        <input type="text" class="cmd-input" id="cmdInput" autofocus autofocus autocomplete="off">
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const cmdInput = document.getElementById('cmdInput');
+    const outputHistory = document.getElementById('outputHistory');
+    const terminalBody = document.getElementById('terminalBody');
+
+    cmdInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        const query = cmdInput.value.trim();
+        if (!query) return;
+
+        // 1. 在畫面上秀出使用者剛才輸入的話
+        appendOutput(`\nuser@universe:~$ ${query}`);
+        cmdInput.value = ''; // 清空輸入框
+
+        // 2. 判斷指令
+        if (query === '/help') {
+          appendOutput(`系統指令說明：\n  /random : 拋棄大腦，由命運隨機挑選答案。\n  [輸入任何字句] : 啟動後端 Python 與 AI 進行深度演算解答。`);
+        } else if (query === '/random') {
+          simulateBackendCall(query, true);
+        } else {
+          simulateBackendCall(query, false);
+        }
+      }
+    });
+
+    function appendOutput(text) {
+      outputHistory.textContent += text + '\n';
+      // 讓捲軸自動滾動到最下方
+      terminalBody.scrollTop = terminalBody.scrollHeight;
+    }
+
+    // 3. 模擬呼叫後端（這部分之後要換成真正的 fetch API）
+    function simulateBackendCall(query, isRandom) {
+      appendOutput(`[系統] 正在呼叫 Python 後端核心...`);
+      if (!isRandom) {
+        appendOutput(`[系統] 已隨機撈取備選資料庫，正在委託 AI 進行命運評判...`);
+      }
+
+      // 模擬後端 1.5 秒的延遲（AI 計算需要時間）
+      setTimeout(() => {
+        if (isRandom) {
+          appendOutput(`>> 【隨機啟示】：勇敢前行，不要回頭。`);
+        } else {
+          appendOutput(`>> 【AI 評判解答】：關於「${query}」，宇宙給予的指引是：『放手一搏，時候未到。』`);
+        }
+      }, 1500);
+    }
+  </script>
+</body>
+
+</html>
