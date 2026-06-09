@@ -26,7 +26,6 @@
       width: 100%;
       max-width: 800px;
       background-color: #111;
-      /*border: 2px solid #00ff33;*/
       box-shadow: 0 0 20px rgba(0, 255, 51, 0.2);
       border-radius: 5px;
       overflow: hidden;
@@ -79,7 +78,7 @@
       line-height: 1.5;
     }
 
-    /* 功能按鈕區（取代原本死板的純打字） */
+    /* 功能按鈕區 */
     .action-panel {
       margin-top: 20px;
       display: flex;
@@ -208,6 +207,17 @@
       ]</button>
   </div>
 
+  <div class="modal-overlay" id="questionModal">
+    <div class="modal-box">
+      <h3>> 請輸入你想向宇宙詢問的問題：</h3>
+      <input type="text" id="userQuestionInput" class="modal-input" placeholder="例如：我這學期期末考會過嗎？" autocomplete="off">
+      <div class="modal-buttons">
+        <button class="geek-btn" onclick="closeQuestionModal()">取消</button>
+        <button class="geek-btn" onclick="submitQuestion()">送出冥想</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="nicknameModal">
     <div class="modal-box">
       <h3>> [SYSTEM AUTHENTICATION] </h3>
@@ -220,71 +230,55 @@
   </div>
 
   <script>
-    // 全域變數與 DOM 節點抓取
-      let userNickname = localStorage.getItem('user_nickname');
-      const outputDiv = document.getElementById('output');
-      const modal = document.getElementById('questionModal');
-      const questionInput = document.getElementById('userQuestionInput');
+    // 全域變數與 DOM 節點精準抓取
+    let userNickname = localStorage.getItem('user_nickname');
+    const outputDiv = document.getElementById('output');
 
-      // 🔥 新增：暱稱彈窗相關節點
-        const nicknameModal = document.getElementById('nicknameModal');
-        const nicknameInput = document.getElementById('userNicknameInput');
+    // 修正：確實對應到兩個獨立的彈窗與輸入框
+    const questionModal = document.getElementById('questionModal');
+    const questionInput = document.getElementById('userQuestionInput');
+    const nicknameModal = document.getElementById('nicknameModal');
+    const nicknameInput = document.getElementById('userNicknameInput');
 
     // 網頁載入時的初始化檢查
-      window.addEventListener('DOMContentLoaded', () => {
-        // 顯示終端機啟動畫面
-        logToTerminal('Initializing Quantum Answer Book Terminal...', 'info');
+    window.addEventListener('DOMContentLoaded', () => {
+      logToTerminal('Initializing Quantum Answer Book Terminal...', 'info');
 
-        // 如果沒有儲存過暱稱，就要求輸入
-        if (!userNickname) {
-          askForNickname();
-        } else {
-          logToTerminal(`歡迎回來，【${userNickname}】。宇宙連線已就緒。`, 'success');
-        }
-      });
+      // ✅ 修正點一：如果沒有儲存過暱稱，呼叫漂亮彈窗 openNicknameModal()，不再使用 askForNickname()
+      if (!userNickname) {
+        openNicknameModal();
+      } else {
+        logToTerminal(`歡迎回來，【${userNickname}】。宇宙連線已就緒。`, 'success');
+      }
+    });
 
-      // 🔥 新增：開啟暱稱彈窗
-        function openNicknameModal() {
-          nicknameModal.classList.add('active');
-          nicknameInput.focus();
-        }
+    // 開啟暱稱彈窗
+    function openNicknameModal() {
+      nicknameModal.classList.add('active');
+      nicknameInput.focus();
+    }
 
-        // 🔥 新增：監聽暱稱輸入框的 Enter 鍵
-        nicknameInput.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') {
-            submitNickname();
-          }
-        });
+    // 監聽暱稱輸入框的 Enter 鍵
+    nicknameInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        submitNickname();
+      }
+    });
 
-        // 🔥 新增：處理暱稱送出與儲存
-        function submitNickname() {
-          let name = nicknameInput.value.trim();
+    // 處理暱稱送出與儲存
+    function submitNickname() {
+      let name = nicknameInput.value.trim();
 
-          // 如果使用者頑皮不輸入，就隨機給他一個酷炫稱號
-          if (!name) {
-            name = "匿名迷惘者_" + Math.floor(Math.random() * 1000);
-          }
+      if (!name) {
+        name = "匿名迷惘者_" + Math.floor(Math.random() * 1000);
+      }
 
-          userNickname = name;
-          localStorage.setItem('user_nickname', userNickname); // 存入瀏覽器快取
+      userNickname = name;
+      localStorage.setItem('user_nickname', userNickname);
 
-          nicknameModal.classList.remove('active'); // 關閉彈窗
-          logToTerminal(`通行證已建立！歡迎你，【${userNickname}】。請開始你的占卜。`, 'success');
-        }
-
-      // 要求使用者輸入暱稱的函式
-        function askForNickname() {
-          let name = prompt("請輸入您的宇宙通行暱稱（作為個人歷史紀錄識別）：");
-
-          // 防止使用者沒輸入或按取消
-          if (!name || name.trim() === "") {
-            name = "匿名迷惘者_" + Math.floor(Math.random() * 1000);
-          }
-
-          userNickname = name.trim();
-          localStorage.setItem('user_nickname', userNickname); // 存入瀏覽器快取
-          logToTerminal(`通行證已建立！歡迎你，【${userNickname}】。請開始你的占卜。`, 'success');
-        }
+      nicknameModal.classList.remove('active'); // 關閉彈窗
+      logToTerminal(`通行證已建立！歡迎你，【${userNickname}】。請開始你的占卜。`, 'success');
+    }
 
     // 將訊息輸出到終端機畫面的輔助函式
     function logToTerminal(message, type = 'info') {
@@ -292,136 +286,120 @@
       const div = document.createElement('div');
       div.textContent = prefix + message;
       outputDiv.appendChild(div);
-      outputDiv.scrollTop = outputDiv.scrollHeight; // 自動捲動到最底部
+      outputDiv.scrollTop = outputDiv.scrollHeight;
     }
 
-    // 開啟彈出填寫格
+    // ✅ 修正點二：綁定正確的變數名稱 questionModal
     function openQuestionModal() {
-      modal.classList.add('active');
-      questionInput.value = ''; // 清空欄位
-      setTimeout(() => questionInput.focus(), 100); // 自動聚焦
+      questionModal.classList.add('active');
+      questionInput.value = '';
+      setTimeout(() => questionInput.focus(), 100);
     }
 
-    // 關閉彈出填寫格
     function closeQuestionModal() {
-      modal.classList.remove('active');
+      questionModal.classList.remove('active');
     }
 
-    // 監聽彈出框的 Enter 鍵送出
+    // 監聽彈出框的 Enter 鍵送出問題
     questionInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
         submitQuestion();
       }
     });
 
-  // ==========================================
-  // 修改 A：輸入問題占卜 (完整覆蓋原本的 submitQuestion)
-  // ==========================================
-  async function submitQuestion() {
-    const question = questionInput.value.trim();
-    if (!question) {
-      alert('請先輸入問題！');
-      return;
-    }
-
-    closeQuestionModal(); // 關閉對話框
-    logToTerminal(`[${userNickname}] 提問: ${question}`); // 調整：顯示是誰提問的
-
-    // 炫技感分析動畫
-    logToTerminal('正在分析量子力學機率矩陣...', 'info');
-    logToTerminal('正在與天界大數據進行特徵匹配...', 'info');
-
-    try {
-      // 🔥【關鍵修改】除了傳 question，網址後面強行串上 &nickname 參數
-      const response = await fetch(`/api/get_answer?question=${encodeURIComponent(question)}&nickname=${encodeURIComponent(userNickname)}`);
-      const data = await response.json();
-
-      if (data.status === 'success') {
-        setTimeout(() => {
-          logToTerminal(`宇宙給予【${userNickname}】的啟示: ${data.answer}`, 'success');
-        }, 1000);
-      } else {
-        logToTerminal(`核心解碼失敗: ${data.message}`, 'error');
+    // 輸入問題占卜 
+    async function submitQuestion() {
+      const question = questionInput.value.trim();
+      if (!question) {
+        alert('請先輸入問題！');
+        return;
       }
-    } catch (error) {
-      logToTerminal('無法連線到預言伺服器。', 'error');
-    }
-  }
 
-  // ==========================================
-  // 附加修改：隨機抽取解答 (帶上暱稱)
-  // ==========================================
-  async function triggerRandomAnswer() {
-    logToTerminal(`觸發【${userNickname}】的隨機解答封包抽取...`);
-    try {
-      // 🔥【修改重點】不帶 question 沒關係，但記得帶上 nickname 參數
-      const response = await fetch(`/api/get_answer?nickname=${encodeURIComponent(userNickname)}`);
-      const data = await response.json();
-      if (data.status === 'success') {
-        logToTerminal(`隨機啟示: ${data.answer}`, 'success');
-      } else {
-        logToTerminal('抽取失敗。', 'error');
+      closeQuestionModal();
+      logToTerminal(`[${userNickname}] 提問: ${question}`);
+
+      logToTerminal('正在分析量子力學機率矩陣...', 'info');
+      logToTerminal('正在與天界大數據進行特徵匹配...', 'info');
+
+      try {
+        const response = await fetch(`/api/get_answer?question=${encodeURIComponent(question)}&nickname=${encodeURIComponent(userNickname)}`);
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          setTimeout(() => {
+            logToTerminal(`宇宙給予【${userNickname}】的啟示: ${data.answer}`, 'success');
+          }, 1000);
+        } else {
+          logToTerminal(`核心解碼失敗: ${data.message}`, 'error');
+        }
+      } catch (error) {
+        logToTerminal('無法連線到預言伺服器。', 'error');
       }
-    } catch (error) {
-      logToTerminal('連線異常。', 'error');
     }
-  }
 
-  // ==========================================
-  // 修改 B：查看歷史紀錄 (完整覆蓋原本的 fetchHistory)
-  // ==========================================
-  async function fetchHistory() {
-    logToTerminal(`正在讀取【${userNickname}】的本機 SQLite 個人占卜日誌...`); // 調整：明確告知是個人的
-    try {
-      // 🔥【關鍵修改】網址後面加上 ?nickname=... 讓後端只撈這個人的紀錄
-      const response = await fetch(`/api/get_history?nickname=${encodeURIComponent(userNickname)}`);
-      const data = await response.json();
+    // 隨機抽取解答
+    async function triggerRandomAnswer() {
+      logToTerminal(`觸發【${userNickname}】的隨機解答封包抽取...`);
+      try {
+        const response = await fetch(`/api/get_answer?nickname=${encodeURIComponent(userNickname)}`);
+        const data = await response.json();
+        if (data.status === 'success') {
+          logToTerminal(`隨機啟示: ${data.answer}`, 'success');
+        } else {
+          logToTerminal('抽取失敗。', 'error');
+        }
+      } catch (error) {
+        logToTerminal('連線異常。', 'error');
+      }
+    }
 
-      if (data.status === 'success' && data.history.length > 0) {
-        logToTerminal(`--- 歷史紀錄查詢結果 (【${userNickname}】最新10筆) ---`);
-        data.history.forEach((item) => {
-          // 格式化輸出
-          logToTerminal(`[${item.time}] 問: ${item.question || '無'} -> 答: ${item.answer}`);
+    // 查看歷史紀錄
+    async function fetchHistory() {
+      logToTerminal(`正在讀取【${userNickname}】的本機 SQLite 個人占卜日誌...`);
+      try {
+        const response = await fetch(`/api/get_history?nickname=${encodeURIComponent(userNickname)}`);
+        const data = await response.json();
+
+        if (data.status === 'success' && data.history.length > 0) {
+          logToTerminal(`--- 歷史紀錄查詢結果 (【${userNickname}】最新10筆) ---`);
+          data.history.forEach((item) => {
+            logToTerminal(`[${item.time}] 問: ${item.question || '無'} -> 答: ${item.answer}`);
+          });
+          logToTerminal('----------------------------------');
+        } else {
+          logToTerminal(`查無【${userNickname}】的任何占卜紀錄。`, 'info');
+        }
+      } catch (error) {
+        logToTerminal('歷史紀錄讀取失敗。', 'error');
+      }
+    }
+
+    // 清除歷史紀錄
+    async function clearHistoryFromServer() {
+      if (!confirm(`確定要永遠抹除【${userNickname}】在宇宙中所有的占卜歷史紀錄嗎？此操作無法復原。`)) {
+        return;
+      }
+
+      logToTerminal(`正在對 SQLite 資料庫發送【${userNickname}】的重置訊號...`, 'info');
+
+      try {
+        const response = await fetch('/api/clear_history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nickname: userNickname })
         });
-        logToTerminal('----------------------------------');
-      } else {
-        logToTerminal(`查無【${userNickname}】的任何占卜紀錄。`, 'info');
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          logToTerminal(data.message, 'success');
+          logToTerminal(`【${userNickname}】的歷史紀錄快取已重置。`, 'info');
+        } else {
+          logToTerminal(`抹除紀錄失敗：${data.message}`, 'error');
+        }
+      } catch (error) {
+        logToTerminal('無法連線到預言伺服器進行清除動作。', 'error');
       }
-    } catch (error) {
-      logToTerminal('歷史紀錄讀取失敗。', 'error');
     }
-  }
-
-  // ==========================================
-  // 修改 C：清除歷史紀錄 (完整覆蓋原本的 clearHistoryFromServer)
-  // ==========================================
-  async function clearHistoryFromServer() {
-    // 調整：提示訊息加入暱稱，防止誤刪別人的
-    if (!confirm(`確定要永遠抹除【${userNickname}】在宇宙中所有的占卜歷史紀錄嗎？此操作無法復原。`)) {
-      return;
-    }
-
-    logToTerminal(`正在對 SQLite 資料庫發送【${userNickname}】的重置訊號...`, 'info');
-
-    try {
-      // 🔥【關鍵修改】使用 POST 請求，並在 body 中用 JSON 格式把暱稱包過去
-      const response = await fetch('/api/clear_history', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nickname: userNickname }) // 告訴後端只刪這個名字的
-      });
-      const data = await response.json();
-
-      if (data.status === 'success') {
-        logToTerminal(data.message, 'success');
-        logToTerminal(`【${userNickname}】的歷史紀錄快取已重置。`, 'info');
-      } else {
-        logToTerminal(`抹除紀錄失敗：${data.message}`, 'error');
-      }
-    } catch (error) {
-      logToTerminal('無法連線到預言伺服器進行清除動作。', 'error');
-    }
-  }
   </script>
 </body>
 
