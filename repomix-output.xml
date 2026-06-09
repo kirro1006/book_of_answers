@@ -3597,21 +3597,37 @@ const db = new Database("answer_book.db");
 db.run(`
   CREATE TABLE IF NOT EXISTS HistoryRecord (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nickname TEXT NOT NULL,
     question TEXT NOT NULL,
     answer TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
 
+// ⚡ 防呆升級：確保基礎資料表存在，若全新沒資料則自動初始化
+db.run(`CREATE TABLE IF NOT EXISTS AnswerType (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, weight INTEGER NOT NULL);`);
+db.run(`CREATE TABLE IF NOT EXISTS Template (id INTEGER PRIMARY KEY AUTOINCREMENT, type_id INTEGER, content TEXT NOT NULL);`);
+db.run(`CREATE TABLE IF NOT EXISTS TemplateSlot (id INTEGER PRIMARY KEY AUTOINCREMENT, template_id INTEGER, slot_name TEXT NOT NULL, category_id INTEGER);`);
+db.run(`CREATE TABLE IF NOT EXISTS Word (id INTEGER PRIMARY KEY AUTOINCREMENT, category_id INTEGER, content TEXT NOT NULL);`);
+
+// 檢查如果 AnswerType 沒資料，自動塞入預設宇宙大數據
+const checkData = db.query("SELECT COUNT(*) as count FROM AnswerType").get() as { count: number };
+if (checkData.count === 0) {
+  console.log("🧬 [System] 偵測到全新資料庫，正在寫入宇宙啟示基礎資料...");
+  db.run("INSERT INTO AnswerType (id, name, weight) VALUES (1, '肯定', 20), (2, '否定', 20), (3, '等待', 30), (4, '警告', 15), (5, '反思', 15);");
+  db.run("INSERT INTO Template (id, type_id, content) VALUES (1, 1, '{thing}會帶來好結果。'), (2, 2, '現在不要相信{thing}。'), (3, 3, '關於{thing}還需要等待。'), (4, 4, '小心{thing}背後的代價。'), (5, 5, '或許你該重新思考{thing}。');");
+  db.run("INSERT INTO TemplateSlot (template_id, slot_name, category_id) VALUES (1, 'thing', 1), (2, 'thing', 1), (3, 'thing', 1), (4, 'thing', 1), (5, 'thing', 1);");
+  db.run("INSERT INTO Word (category_id, content) VALUES (1, '機會'), (1, '決定'), (1, '約定'), (1, '旅程');");
+}
+
 // 模擬 Python 的 random.choices (根據權重隨機抽樣)
 function choiceWithWeights(items: any[], weights: number[]): any {
+  if (items.length === 0) return null;
   const totalWeight = weights.reduce((sum, w) => sum + w, 0);
   let randomNum = Math.random() * totalWeight;
   
   for (let i = 0; i < items.length; i++) {
-    const currentWeight = weights[i]; // 先取出數值
-
-    // ✅ 關鍵修正：透過安全檢查確保 currentWeight 不是 undefined 
+    const currentWeight = weights[i];
     if (currentWeight !== undefined) {
       if (randomNum < currentWeight) {
         return items[i];
@@ -3624,15 +3640,11 @@ function choiceWithWeights(items: any[], weights: number[]): any {
 
 // 2. 啟動 Bun 全端伺服器
 const server = Bun.serve({
-  // 優先讀取 Render 提供的 PORT，本地則預設 5000
   port: process.env.PORT || 5000,
-  // 關鍵新增：在 Docker 環境下必須指定為 '0.0.0.0'
   hostname: "0.0.0.0",
   async fetch(req) {
     const url = new URL(req.url);
-    // 確保 userQuestion 變數在 query 之前有被宣告（如果前面漏掉了請補上）
-    // 如果你的前端傳過來的是 question，確保它有 fallback 預設字串
-    const userQuestion = "未輸入問題 (純隨機抽卡)";
+    
     // 路由 A：前端首頁 API - 直接渲染網頁
     if (url.pathname === "/" || url.pathname === "/index.html") {
       return new Response(Bun.file("templates/index.html"), {
@@ -3641,76 +3653,82 @@ const server = Bun.serve({
     }
 
     // 路由 B：宇宙解答 API
-if (url.pathname === "/api/get_answer" && req.method === "GET") {
-  try {
-    // 🔥 【關鍵修正】從前端傳過來的 URL 網址參數中取得 "question"
-    // 如果網址裡有 ?question=xxx 就用它，沒有的話（例如純隨機）就 fallback 回預設字串
-    const urlQuestion = url.searchParams.get("question");
-    const userQuestion = urlQuestion && urlQuestion.trim() !== "" 
-      ? urlQuestion 
-      : "未輸入問題 (純隨機抽卡)";
+    if (url.pathname === "/api/get_answer" && req.method === "GET") {
+      const nickname = url.searchParams.get("nickname") || "神秘訪客";
+      const urlQuestion = url.searchParams.get("question");
+      // ✅ 修正點：防呆確保 question 永遠有字串，不會因為前端沒傳而變成 null
+      const question = urlQuestion && urlQuestion.trim() !== "" 
+        ? urlQuestion 
+        : "未輸入問題 (純隨機抽卡)";
 
-    // 核心邏輯 1：根據權重抽出 AnswerType
-    const types: any[] = db.query("SELECT id, name, weight FROM AnswerType").all();
-    const typeId = choiceWithWeights(
-      types.map(t => t.id),
-      types.map(t => t.weight)
-    );
+      try {
+        // 核心邏輯 1：根據權重抽出 AnswerType
+        const types: any[] = db.query("SELECT id, name, weight FROM AnswerType").all();
+        const typeId = choiceWithWeights(
+          types.map(t => t.id),
+          types.map(t => t.weight)
+        );
 
-    // 核心邏輯 2：隨機抽出該分類下的一個模板
-    const templateRow: any = db.query(`
-      SELECT id, content FROM Template 
-      WHERE type_id = $typeId 
-      ORDER BY RANDOM() LIMIT 1
-    `).get({ $typeId: typeId });
+        if (!typeId) {
+          return Response.json({ status: "error", message: "資料庫無有效分類權重資料" }, { status: 500 });
+        }
 
-    if (!templateRow) {
-      return Response.json({ status: "error", message: "找不到對應的模板" }, { status: 404 });
-    }
+        // 核心邏輯 2：隨機抽出該分類下的一個模板
+        const templateRow: any = db.query(`
+          SELECT id, content FROM Template 
+          WHERE type_id = $typeId 
+          ORDER BY RANDOM() LIMIT 1
+        `).get({ $typeId: typeId });
 
-    const { id: templateId, content: templateContent } = templateRow;
+        if (!templateRow) {
+          return Response.json({ status: "error", message: `分類 ${typeId} 下找不到對應的模板` }, { status: 404 });
+        }
 
-    // 核心邏輯 3 & 4：找出 Slot 並填入 Word
-    const slots: any[] = db.query("SELECT slot_name, category_id FROM TemplateSlot WHERE template_id = $templateId")
-      .all({ $templateId: templateId });
+        const { id: templateId, content: templateContent } = templateRow;
 
-    let resultMessage = templateContent;
+        // 核心邏輯 3 & 4：找出 Slot 並填入 Word
+        const slots: any[] = db.query("SELECT slot_name, category_id FROM TemplateSlot WHERE template_id = $templateId")
+          .all({ $templateId: templateId });
 
-    for (const slot of slots) {
-      const wordRow: any = db.query(`
-        SELECT content FROM Word 
-        WHERE category_id = $categoryId 
-        ORDER BY RANDOM() LIMIT 1
-      `).get({ $categoryId: slot.category_id });
+        let resultMessage = templateContent;
 
-      const word = wordRow ? wordRow.content : "";
-      resultMessage = resultMessage.replace(`{${slot.slot_name}}`, word);
-    }
+        for (const slot of slots) {
+          const wordRow: any = db.query(`
+            SELECT content FROM Word 
+            WHERE category_id = $categoryId 
+            ORDER BY RANDOM() LIMIT 1
+          `).get({ $categoryId: slot.category_id });
 
-// ----------------------------------------------------
+          const word = wordRow ? wordRow.content : "";
+          resultMessage = resultMessage.replace(`{${slot.slot_name}}`, word);
+        }
 
-// 🔥 將正確辨識到的 userQuestion 寫入 SQLite 歷史紀錄
-    db.run(
-      "INSERT INTO HistoryRecord (question, answer) VALUES (?, ?)",
-      [userQuestion, resultMessage]
-    );
+        // 將記錄寫入資料庫歷史紀錄
+        db.run(
+          `INSERT INTO HistoryRecord (nickname, question, answer) VALUES (?, ?, ?)`,
+          [nickname, question, resultMessage]
+        );
 
+        // 回傳給前端成功封包
         return Response.json({ status: "success", answer: resultMessage });
 
       } catch (e: any) {
+        // 如果還是崩潰，會把真正的錯誤原因回傳，讓前端能看到具體是哪行 SQL 壞掉
         return Response.json({ status: "error", message: e.message }, { status: 500 });
       }
     }
 
-    // 🔥 【全新新增】路由 C：獲取歷史紀錄 API (限制唯讀取最新 10 筆)
+    // 路由 C：獲取歷史紀錄 API
     if (url.pathname === "/api/get_history" && req.method === "GET") {
+      const nickname = url.searchParams.get("nickname") || "神秘訪客";
       try {
         const history: any[] = db.query(`
           SELECT question, answer, datetime(created_at, 'localtime') as time 
           FROM HistoryRecord 
+          WHERE nickname = ? 
           ORDER BY id DESC 
           LIMIT 10
-        `).all();
+        `).all(nickname);
 
         return Response.json({ status: "success", history: history });
       } catch (e: any) {
@@ -3718,17 +3736,19 @@ if (url.pathname === "/api/get_answer" && req.method === "GET") {
       }
     }
 
-    // 🔥 【全新新增】路由 D：清除所有歷史紀錄 API
-if (url.pathname === "/api/clear_history" && req.method === "POST") {
-  try {
-    // 執行 SQL 指令，將 HistoryRecord 資料表清空
-    db.run("DELETE FROM HistoryRecord");
-    
-    return Response.json({ status: "success", message: "所有占卜紀錄已成功從宇宙核心抹除！" });
-  } catch (e: any) {
-    return Response.json({ status: "error", message: e.message }, { status: 500 });
-  }
-}
+    // 路由 D：清除個人專屬歷史紀錄 API
+    if (url.pathname === "/api/clear_history" && req.method === "POST") {
+      try {
+        const body: any = await req.json();
+        const nickname = body.nickname || "神秘訪客";
+
+        db.run(`DELETE FROM HistoryRecord WHERE nickname = ?`, [nickname]);
+
+        return Response.json({ status: "success", message: `已成功抹除 ${nickname} 在宇宙中的所有紀錄！` });
+      } catch (e: any) {
+        return Response.json({ status: "error", message: e.message }, { status: 500 });
+      }
+    }
 
     return new Response("Not Found", { status: 404 });
   },
@@ -3767,7 +3787,6 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
       width: 100%;
       max-width: 800px;
       background-color: #111;
-      /*border: 2px solid #00ff33;*/
       box-shadow: 0 0 20px rgba(0, 255, 51, 0.2);
       border-radius: 5px;
       overflow: hidden;
@@ -3820,7 +3839,7 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
       line-height: 1.5;
     }
 
-    /* 功能按鈕區（取代原本死板的純打字） */
+    /* 功能按鈕區 */
     .action-panel {
       margin-top: 20px;
       display: flex;
@@ -3960,10 +3979,67 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
     </div>
   </div>
 
+  <div class="modal-overlay" id="nicknameModal">
+    <div class="modal-box">
+      <h3>> [SYSTEM AUTHENTICATION] </h3>
+      <p style="color: #00ff33; margin-bottom: 15px;">請輸入您的宇宙通行暱稱，以初始化個人命運日誌：</p>
+      <input type="text" id="userNicknameInput" class="modal-input" placeholder="例如：計概助教、小明" autocomplete="off">
+      <div class="modal-buttons">
+        <button class="geek-btn" onclick="submitNickname()">確認連線</button>
+      </div>
+    </div>
+  </div>
+
   <script>
+    // 全域變數與 DOM 節點精準抓取
+    let userNickname = localStorage.getItem('user_nickname');
     const outputDiv = document.getElementById('output');
-    const modal = document.getElementById('questionModal');
+
+    // 修正：確實對應到兩個獨立的彈窗與輸入框
+    const questionModal = document.getElementById('questionModal');
     const questionInput = document.getElementById('userQuestionInput');
+    const nicknameModal = document.getElementById('nicknameModal');
+    const nicknameInput = document.getElementById('userNicknameInput');
+
+    // 網頁載入時的初始化檢查
+    window.addEventListener('DOMContentLoaded', () => {
+      logToTerminal('Initializing Quantum Answer Book Terminal...', 'info');
+
+      // ✅ 修正點一：如果沒有儲存過暱稱，呼叫漂亮彈窗 openNicknameModal()，不再使用 askForNickname()
+      if (!userNickname) {
+        openNicknameModal();
+      } else {
+        logToTerminal(`歡迎回來，【${userNickname}】。宇宙連線已就緒。`, 'success');
+      }
+    });
+
+    // 開啟暱稱彈窗
+    function openNicknameModal() {
+      nicknameModal.classList.add('active');
+      nicknameInput.focus();
+    }
+
+    // 監聽暱稱輸入框的 Enter 鍵
+    nicknameInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        submitNickname();
+      }
+    });
+
+    // 處理暱稱送出與儲存
+    function submitNickname() {
+      let name = nicknameInput.value.trim();
+
+      if (!name) {
+        name = "匿名迷惘者_" + Math.floor(Math.random() * 1000);
+      }
+
+      userNickname = name;
+      localStorage.setItem('user_nickname', userNickname);
+
+      nicknameModal.classList.remove('active'); // 關閉彈窗
+      logToTerminal(`通行證已建立！歡迎你，【${userNickname}】。請開始你的占卜。`, 'success');
+    }
 
     // 將訊息輸出到終端機畫面的輔助函式
     function logToTerminal(message, type = 'info') {
@@ -3971,29 +4047,28 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
       const div = document.createElement('div');
       div.textContent = prefix + message;
       outputDiv.appendChild(div);
-      outputDiv.scrollTop = outputDiv.scrollHeight; // 自動捲動到最底部
+      outputDiv.scrollTop = outputDiv.scrollHeight;
     }
 
-    // 開啟彈出填寫格
+    // ✅ 修正點二：綁定正確的變數名稱 questionModal
     function openQuestionModal() {
-      modal.classList.add('active');
-      questionInput.value = ''; // 清空欄位
-      setTimeout(() => questionInput.focus(), 100); // 自動聚焦
+      questionModal.classList.add('active');
+      questionInput.value = '';
+      setTimeout(() => questionInput.focus(), 100);
     }
 
-    // 關閉彈出填寫格
     function closeQuestionModal() {
-      modal.classList.remove('active');
+      questionModal.classList.remove('active');
     }
 
-    // 監聽彈出框的 Enter 鍵送出
+    // 監聽彈出框的 Enter 鍵送出問題
     questionInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
         submitQuestion();
       }
     });
 
-    // 處理 [輸入問題占卜] 送出
+    // 輸入問題占卜 
     async function submitQuestion() {
       const question = questionInput.value.trim();
       if (!question) {
@@ -4001,22 +4076,19 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
         return;
       }
 
-      closeQuestionModal(); // 關閉對話框
-      logToTerminal(`使用者提問: ${question}`);
+      closeQuestionModal();
+      logToTerminal(`[${userNickname}] 提問: ${question}`);
 
-      // 駭客炫技感：分析中動畫
       logToTerminal('正在分析量子力學機率矩陣...', 'info');
       logToTerminal('正在與天界大數據進行特徵匹配...', 'info');
 
       try {
-        // 呼叫後端 API（帶上問題參數）
-        const response = await fetch(`/api/get_answer?question=${encodeURIComponent(question)}`);
+        const response = await fetch(`/api/get_answer?question=${encodeURIComponent(question)}&nickname=${encodeURIComponent(userNickname)}`);
         const data = await response.json();
 
         if (data.status === 'success') {
-          // 延遲 1 秒顯示解答，加強儀式感
           setTimeout(() => {
-            logToTerminal(`宇宙給予的啟示: ${data.answer}`, 'success');
+            logToTerminal(`宇宙給予【${userNickname}】的啟示: ${data.answer}`, 'success');
           }, 1000);
         } else {
           logToTerminal(`核心解碼失敗: ${data.message}`, 'error');
@@ -4026,12 +4098,11 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
       }
     }
 
-    // 處理 [隨機抽取解答] 按鈕
+    // 隨機抽取解答
     async function triggerRandomAnswer() {
-      logToTerminal('觸發隨機解答封包抽取...');
+      logToTerminal(`觸發【${userNickname}】的隨機解答封包抽取...`);
       try {
-        // 不帶 question 參數，後端就會執行隨機抽取
-        const response = await fetch('/api/get_answer');
+        const response = await fetch(`/api/get_answer?nickname=${encodeURIComponent(userNickname)}`);
         const data = await response.json();
         if (data.status === 'success') {
           logToTerminal(`隨機啟示: ${data.answer}`, 'success');
@@ -4043,51 +4114,53 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
       }
     }
 
-    // 處理 [查看歷史紀錄] 按鈕
+    // 查看歷史紀錄
     async function fetchHistory() {
-      logToTerminal('正在讀取本機 SQLite 歷史占卜日誌...');
+      logToTerminal(`正在讀取【${userNickname}】的本機 SQLite 個人占卜日誌...`);
       try {
-        const response = await fetch('/api/get_history');
+        const response = await fetch(`/api/get_history?nickname=${encodeURIComponent(userNickname)}`);
         const data = await response.json();
 
         if (data.status === 'success' && data.history.length > 0) {
-          logToTerminal('--- 歷史紀錄查詢結果 (最新10筆) ---');
-          data.history.forEach((item, index) => {
+          logToTerminal(`--- 歷史紀錄查詢結果 (【${userNickname}】最新10筆) ---`);
+          data.history.forEach((item) => {
             logToTerminal(`[${item.time}] 問: ${item.question || '無'} -> 答: ${item.answer}`);
           });
           logToTerminal('----------------------------------');
         } else {
-          logToTerminal('查無任何占卜紀錄。', 'info');
+          logToTerminal(`查無【${userNickname}】的任何占卜紀錄。`, 'info');
         }
       } catch (error) {
         logToTerminal('歷史紀錄讀取失敗。', 'error');
       }
     }
 
-    // 🔥 全新新增：呼叫後端 API 清除所有歷史紀錄
-      async function clearHistoryFromServer() {
-        // 跳出瀏覽器內建確認視窗，防止手殘誤點
-        if (!confirm("確定要永遠抹除宇宙中所有的占卜歷史紀錄嗎？此操作無法復原。")) {
-          return;
-        }
-
-        logToTerminal('正在對 SQLite 資料庫發送重置訊號...', 'info');
-
-        try {
-          // 呼叫我們剛剛在後端寫好的 API
-          const response = await fetch('/api/clear_history', { method: 'POST' });
-          const data = await response.json();
-
-          if (data.status === 'success') {
-            logToTerminal(data.message, 'success');
-            logToTerminal('歷史紀錄快取已重置。', 'info');
-          } else {
-            logToTerminal(`抹除紀錄失敗：${data.message}`, 'error');
-          }
-        } catch (error) {
-          logToTerminal('無法連線到預言伺服器進行清除動作。', 'error');
-        }
+    // 清除歷史紀錄
+    async function clearHistoryFromServer() {
+      if (!confirm(`確定要永遠抹除【${userNickname}】在宇宙中所有的占卜歷史紀錄嗎？此操作無法復原。`)) {
+        return;
       }
+
+      logToTerminal(`正在對 SQLite 資料庫發送【${userNickname}】的重置訊號...`, 'info');
+
+      try {
+        const response = await fetch('/api/clear_history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nickname: userNickname })
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          logToTerminal(data.message, 'success');
+          logToTerminal(`【${userNickname}】的歷史紀錄快取已重置。`, 'info');
+        } else {
+          logToTerminal(`抹除紀錄失敗：${data.message}`, 'error');
+        }
+      } catch (error) {
+        logToTerminal('無法連線到預言伺服器進行清除動作。', 'error');
+      }
+    }
   </script>
 </body>
 
