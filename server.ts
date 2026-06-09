@@ -50,54 +50,60 @@ const server = Bun.serve({
       });
     }
 
-    // 路由 B：宇宙解答 API（替代原本 Python Flask 的 /api/get_answer）
-    if (url.pathname === "/api/get_answer" && req.method === "GET") {
-      try {
-        // 核心邏輯 1：根據權重抽出 AnswerType
-        const types: any[] = db.query("SELECT id, name, weight FROM AnswerType").all();
-        const typeId = choiceWithWeights(
-          types.map(t => t.id),
-          types.map(t => t.weight)
-        );
+    // 路由 B：宇宙解答 API
+if (url.pathname === "/api/get_answer" && req.method === "GET") {
+  try {
+    // 🔥 【關鍵修正】從前端傳過來的 URL 網址參數中取得 "question"
+    // 如果網址裡有 ?question=xxx 就用它，沒有的話（例如純隨機）就 fallback 回預設字串
+    const urlQuestion = url.searchParams.get("question");
+    const userQuestion = urlQuestion && urlQuestion.trim() !== "" 
+      ? urlQuestion 
+      : "未輸入問題 (純隨機抽卡)";
 
-        // 核心邏輯 2：隨機抽出該分類下的一個模板
-        const templateRow: any = db.query(`
-          SELECT id, content FROM Template 
-          WHERE type_id = $typeId 
-          ORDER BY RANDOM() LIMIT 1
-        `).get({ $typeId: typeId });
+    // 核心邏輯 1：根據權重抽出 AnswerType
+    const types: any[] = db.query("SELECT id, name, weight FROM AnswerType").all();
+    const typeId = choiceWithWeights(
+      types.map(t => t.id),
+      types.map(t => t.weight)
+    );
 
-        if (!templateRow) {
-          return Response.json({ status: "error", message: "找不到對應的模板" }, { status: 404 });
-        }
+    // 核心邏輯 2：隨機抽出該分類下的一個模板
+    const templateRow: any = db.query(`
+      SELECT id, content FROM Template 
+      WHERE type_id = $typeId 
+      ORDER BY RANDOM() LIMIT 1
+    `).get({ $typeId: typeId });
 
-        const { id: templateId, content: templateContent } = templateRow;
+    if (!templateRow) {
+      return Response.json({ status: "error", message: "找不到對應的模板" }, { status: 404 });
+    }
 
-        // 核心邏輯 3 & 4：找出 Slot 並填入 Word
-        const slots: any[] = db.query("SELECT slot_name, category_id FROM TemplateSlot WHERE template_id = $templateId")
-          .all({ $templateId: templateId });
+    const { id: templateId, content: templateContent } = templateRow;
 
-        let resultMessage = templateContent;
+    // 核心邏輯 3 & 4：找出 Slot 並填入 Word
+    const slots: any[] = db.query("SELECT slot_name, category_id FROM TemplateSlot WHERE template_id = $templateId")
+      .all({ $templateId: templateId });
 
-        for (const slot of slots) {
-          const wordRow: any = db.query(`
-            SELECT content FROM Word 
-            WHERE category_id = $categoryId 
-            ORDER BY RANDOM() LIMIT 1
-          `).get({ $categoryId: slot.category_id });
+    let resultMessage = templateContent;
 
-          const word = wordRow ? wordRow.content : "";
-          // 替換掉字串中的 {thing}, {person} 等挖空
-          resultMessage = resultMessage.replace(`{${slot.slot_name}}`, word);
-        }
+    for (const slot of slots) {
+      const wordRow: any = db.query(`
+        SELECT content FROM Word 
+        WHERE category_id = $categoryId 
+        ORDER BY RANDOM() LIMIT 1
+      `).get({ $categoryId: slot.category_id });
+
+      const word = wordRow ? wordRow.content : "";
+      resultMessage = resultMessage.replace(`{${slot.slot_name}}`, word);
+    }
 
 // ----------------------------------------------------
 
-        // 🔥 【關鍵新增】將本次的占卜紀錄寫入 SQLite 資料庫
-db.run(
-  "INSERT INTO HistoryRecord (question, answer) VALUES (?, ?)",
-  [userQuestion, resultMessage]
-);
+// 🔥 將正確辨識到的 userQuestion 寫入 SQLite 歷史紀錄
+    db.run(
+      "INSERT INTO HistoryRecord (question, answer) VALUES (?, ?)",
+      [userQuestion, resultMessage]
+    );
 
         return Response.json({ status: "success", answer: resultMessage });
 
@@ -121,6 +127,18 @@ db.run(
         return Response.json({ status: "error", message: e.message }, { status: 500 });
       }
     }
+
+    // 🔥 【全新新增】路由 D：清除所有歷史紀錄 API
+if (url.pathname === "/api/clear_history" && req.method === "POST") {
+  try {
+    // 執行 SQL 指令，將 HistoryRecord 資料表清空
+    db.run("DELETE FROM HistoryRecord");
+    
+    return Response.json({ status: "success", message: "所有占卜紀錄已成功從宇宙核心抹除！" });
+  } catch (e: any) {
+    return Response.json({ status: "error", message: e.message }, { status: 500 });
+  }
+}
 
     return new Response("Not Found", { status: 404 });
   },
