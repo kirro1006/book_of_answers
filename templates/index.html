@@ -92,33 +92,89 @@
     </div>
   </div>
 
-  <script type="module">
-    const outputDiv = document.getElementById('terminal-output');
-    const button = document.getElementById('get-answer-btn');
+  <script>
+    const cmdInput = document.getElementById('cmdInput');
+    const outputHistory = document.getElementById('outputHistory');
+    const terminalBody = document.getElementById('terminalBody');
 
-    button.addEventListener('click', async () => {
-      // 1. 顯示讀取中的儀式感動畫
-      button.disabled = true;
-      outputDiv.innerHTML += "\n[系統] 正在連接後端資料庫...\n[系統] 正在隨機檢索模板與權重...\n[宇宙提示] 正在思考中...";
+    cmdInput.addEventListener('keydown', async function (e) {
+      if (e.key === 'Enter') {
+        const query = cmdInput.value.trim();
+        if (!query) return;
+
+        // 1. 在畫面上秀出使用者輸入的內容
+        appendOutput(`\nuser@universe:~$ ${query}`);
+        cmdInput.value = ''; // 清空輸入框
+
+        // 2. 判斷終端機指令
+        if (query === '/help') {
+          appendOutput(`系統指令說明：\n  /random  : 拋棄大腦，直接抽一則宇宙啟示。\n  /history : 查閱過去最近 10 筆問卜紀錄。\n  [隨意輸入] : 輸入你的迷惘，啟動後端資料庫進行命運評判。`);
+        } else if (query === '/history') {
+          await fetchAndShowHistory();
+        } else if (query === '/random') {
+          await callBackendAnswer(null); // 不帶問題的隨機抽卡
+        } else {
+          await callBackendAnswer(query); // 帶有問題的問卜
+        }
+      }
+    });
+
+    function appendOutput(text) {
+      outputHistory.textContent += text + '\n';
+      terminalBody.scrollTop = terminalBody.scrollHeight; // 自動滾動
+    }
+
+    // 向後端請求答案 (支援純隨機與輸入問題)
+    async function callBackendAnswer(question) {
+      appendOutput(`[系統] 正在呼叫後端核心...`);
+      if (question) {
+        appendOutput(`[系統] 已檢索備選資料庫，正在委託 AI 針對問題「${question}」進行命運評判...`);
+      }
 
       try {
-        // 2. 透過 fetch 向 Python Flask 後端發送請求
-        const response = await fetch('/api/get_answer');
+        // 判斷要用 POST 傳問題，還是用 GET 純隨機抽卡
+        const fetchOptions = question
+          ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) }
+          : { method: 'GET' };
+
+        const response = await fetch('/api/get_answer', fetchOptions);
         const data = await response.json();
 
         if (data.status === 'success') {
-          // 3. 將 Python 後端生成的句子渲染到畫面上
-          outputDiv.innerHTML = `\n🛸 宇宙給你的解答：\n=================================\n\n<strong>${data.answer}</strong>\n\n=================================`;
+          appendOutput(`>> 【宇宙評判解答】：${data.answer}`);
         } else {
-          outputDiv.innerHTML += `\n[錯誤] 抽卡失敗：${data.message}`;
+          appendOutput(`[錯誤] 宇宙連線失敗：${data.message}`);
         }
       } catch (error) {
-        outputDiv.innerHTML += `\n[錯誤] 連線後端失敗，請確認 app.py 是否有正常運行。`;
-        console.error(error);
-      } finally {
-        button.disabled = false;
+        appendOutput(`[錯誤] 無法連接後端伺服器，請檢查 Bun 是否正在運行。`);
       }
-    });
+    }
+
+    // 抓取並渲染歷史紀錄
+    async function fetchAndShowHistory() {
+      appendOutput(`[系統] 正在讀取 SQLite 歷史核心紀錄...`);
+
+      try {
+        const response = await fetch('/api/get_history');
+        const data = await response.json();
+
+        if (data.status === 'success' && data.history.length > 0) {
+          appendOutput(`\n時間\t\t\t問題\t\t\t解答`);
+          appendOutput(`----------------------------------------------------------------------`);
+          data.history.forEach(item => {
+            // 格式化輸出在終端機視窗中
+            appendOutput(`[${item.time}] Q: ${item.question} -> Ans: ${item.answer}`);
+          });
+          appendOutput(`----------------------------------------------------------------------`);
+        } else if (data.history.length === 0) {
+          appendOutput(`>> [提示] 宇宙核心中尚無你的歷史紀錄，快去輸入問題進行第一次問卜吧！`);
+        } else {
+          appendOutput(`[錯誤] 讀取紀錄失敗：${data.message}`);
+        }
+      } catch (error) {
+        appendOutput(`[錯誤] 無法連接後端讀取紀錄。`);
+      }
+    }
   </script>
 </body>
 

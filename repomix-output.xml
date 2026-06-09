@@ -43,6 +43,7 @@ The content is organized as follows:
 .gitignore
 answer_book.db
 app.py
+Dockerfile
 docs/01_Project_Setup_and_Styling.md
 docs/02_Layout_and_Routing.md
 docs/03_Mock_API_and_Data_Fetching.md
@@ -82,102 +83,6 @@ tsconfig.json
 
 <files>
 This section contains the contents of the repository's files.
-
-<file path="server.ts">
-import { Database } from "bun:sqlite";
-
-// 1. 連接你原本的資料庫檔案（Bun 內建 SQLite 支援）
-const db = new Database("answer_book.db");
-
-// 模擬 Python 的 random.choices (根據權重隨機抽樣)
-function choiceWithWeights(items: any[], weights: number[]): any {
-  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-  let randomNum = Math.random() * totalWeight;
-  
-  for (let i = 0; i < items.length; i++) {
-    const currentWeight = weights[i]; // 先取出數值
-
-    // ✅ 關鍵修正：透過安全檢查確保 currentWeight 不是 undefined 
-    if (currentWeight !== undefined) {
-      if (randomNum < currentWeight) {
-        return items[i];
-      }
-      randomNum -= currentWeight;
-    }
-  }
-  return items[0];
-}
-
-// 2. 啟動 Bun 全端伺服器
-const server = Bun.serve({
-  port: 5000,
-  async fetch(req) {
-    const url = new URL(req.url);
-
-    // 路由 A：前端首頁 API - 直接渲染網頁
-    if (url.pathname === "/" || url.pathname === "/index.html") {
-      return new Response(Bun.file("templates/index.html"), {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    }
-
-    // 路由 B：宇宙解答 API（替代原本 Python Flask 的 /api/get_answer）
-    if (url.pathname === "/api/get_answer" && req.method === "GET") {
-      try {
-        // 核心邏輯 1：根據權重抽出 AnswerType
-        const types: any[] = db.query("SELECT id, name, weight FROM AnswerType").all();
-        const typeId = choiceWithWeights(
-          types.map(t => t.id),
-          types.map(t => t.weight)
-        );
-
-        // 核心邏輯 2：隨機抽出該分類下的一個模板
-        const templateRow: any = db.query(`
-          SELECT id, content FROM Template 
-          WHERE type_id = $typeId 
-          ORDER BY RANDOM() LIMIT 1
-        `).get({ $typeId: typeId });
-
-        if (!templateRow) {
-          return Response.json({ status: "error", message: "找不到對應的模板" }, { status: 404 });
-        }
-
-        const { id: templateId, content: templateContent } = templateRow;
-
-        // 核心邏輯 3 & 4：找出 Slot 並填入 Word
-        const slots: any[] = db.query("SELECT slot_name, category_id FROM TemplateSlot WHERE template_id = $templateId")
-          .all({ $templateId: templateId });
-
-        let resultMessage = templateContent;
-
-        for (const slot of slots) {
-          const wordRow: any = db.query(`
-            SELECT content FROM Word 
-            WHERE category_id = $categoryId 
-            ORDER BY RANDOM() LIMIT 1
-          `).get({ $categoryId: slot.category_id });
-
-          const word = wordRow ? wordRow.content : "";
-          // 替換掉字串中的 {thing}, {person} 等挖空
-          resultMessage = resultMessage.replace(`{${slot.slot_name}}`, word);
-        }
-
-        // 回傳 JSON 回前端
-        return Response.json({ status: "success", answer: resultMessage });
-
-      } catch (e: any) {
-        return Response.json({ status: "error", message: e.message }, { status: 500 });
-      }
-    }
-
-    // 404 處理
-    return new Response("Not Found", { status: 404 });
-  },
-});
-
-console.log(`\n🛸 [AI解答之書] 核心伺服器已由 Bun 強勢驅動！`);
-console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
-</file>
 
 <file path="test_code/解答之書資料庫.md">
 CREATE TABLE AnswerType(
@@ -429,6 +334,25 @@ def get_answer():
 if __name__ == '__main__':
     # 啟動本地伺服器，預設網址為 http://127.0.0.1:5000
     app.run(debug=True)
+</file>
+
+<file path="Dockerfile">
+# 1. 使用官方極速的 Bun 鏡像作為基底
+FROM oven/bun:1.1-alpine AS base
+WORKDIR /usr/src/app
+
+# 2. 複製依賴描述檔並安裝套件
+COPY package.json bun.lockb* ./
+RUN bun install --frozen-lockfile
+
+# 3. 複製專案所有程式碼（包含資料庫與網頁模板）
+COPY . .
+
+# 4. 宣告容器內運行的 Port
+EXPOSE 5000
+
+# 5. 用正式環境指令啟動 Bun 全端伺服器
+CMD ["bun", "run", "server.ts"]
 </file>
 
 <file path="docs/01_Project_Setup_and_Styling.md">
@@ -3178,24 +3102,6 @@ INSERT INTO Word (category_id, content) VALUES (100, '遠方的朋友');
 INSERT INTO Word (category_id, content) VALUES (100, '身邊的智者');
 </file>
 
-<file path="package.json">
-{
-  "name": "python-report",
-  "module": "server.ts",
-  "type": "module",
-  "private": true,
-  "scripts": {
-    "dev": "bun --watch server.ts"
-  },
-  "devDependencies": {
-    "@types/bun": "^1.3.14"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
-}
-</file>
-
 <file path="README.md">
 ---
 noteId: "8ffa9910628a11f1a667595876b1983c"
@@ -3315,33 +3221,89 @@ This project was created using `bun init` in bun v1.3.14. [Bun](https://bun.com)
     </div>
   </div>
 
-  <script type="module">
-    const outputDiv = document.getElementById('terminal-output');
-    const button = document.getElementById('get-answer-btn');
+  <script>
+    const cmdInput = document.getElementById('cmdInput');
+    const outputHistory = document.getElementById('outputHistory');
+    const terminalBody = document.getElementById('terminalBody');
 
-    button.addEventListener('click', async () => {
-      // 1. 顯示讀取中的儀式感動畫
-      button.disabled = true;
-      outputDiv.innerHTML += "\n[系統] 正在連接後端資料庫...\n[系統] 正在隨機檢索模板與權重...\n[宇宙提示] 正在思考中...";
+    cmdInput.addEventListener('keydown', async function (e) {
+      if (e.key === 'Enter') {
+        const query = cmdInput.value.trim();
+        if (!query) return;
+
+        // 1. 在畫面上秀出使用者輸入的內容
+        appendOutput(`\nuser@universe:~$ ${query}`);
+        cmdInput.value = ''; // 清空輸入框
+
+        // 2. 判斷終端機指令
+        if (query === '/help') {
+          appendOutput(`系統指令說明：\n  /random  : 拋棄大腦，直接抽一則宇宙啟示。\n  /history : 查閱過去最近 10 筆問卜紀錄。\n  [隨意輸入] : 輸入你的迷惘，啟動後端資料庫進行命運評判。`);
+        } else if (query === '/history') {
+          await fetchAndShowHistory();
+        } else if (query === '/random') {
+          await callBackendAnswer(null); // 不帶問題的隨機抽卡
+        } else {
+          await callBackendAnswer(query); // 帶有問題的問卜
+        }
+      }
+    });
+
+    function appendOutput(text) {
+      outputHistory.textContent += text + '\n';
+      terminalBody.scrollTop = terminalBody.scrollHeight; // 自動滾動
+    }
+
+    // 向後端請求答案 (支援純隨機與輸入問題)
+    async function callBackendAnswer(question) {
+      appendOutput(`[系統] 正在呼叫後端核心...`);
+      if (question) {
+        appendOutput(`[系統] 已檢索備選資料庫，正在委託 AI 針對問題「${question}」進行命運評判...`);
+      }
 
       try {
-        // 2. 透過 fetch 向 Python Flask 後端發送請求
-        const response = await fetch('/api/get_answer');
+        // 判斷要用 POST 傳問題，還是用 GET 純隨機抽卡
+        const fetchOptions = question
+          ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) }
+          : { method: 'GET' };
+
+        const response = await fetch('/api/get_answer', fetchOptions);
         const data = await response.json();
 
         if (data.status === 'success') {
-          // 3. 將 Python 後端生成的句子渲染到畫面上
-          outputDiv.innerHTML = `\n🛸 宇宙給你的解答：\n=================================\n\n<strong>${data.answer}</strong>\n\n=================================`;
+          appendOutput(`>> 【宇宙評判解答】：${data.answer}`);
         } else {
-          outputDiv.innerHTML += `\n[錯誤] 抽卡失敗：${data.message}`;
+          appendOutput(`[錯誤] 宇宙連線失敗：${data.message}`);
         }
       } catch (error) {
-        outputDiv.innerHTML += `\n[錯誤] 連線後端失敗，請確認 app.py 是否有正常運行。`;
-        console.error(error);
-      } finally {
-        button.disabled = false;
+        appendOutput(`[錯誤] 無法連接後端伺服器，請檢查 Bun 是否正在運行。`);
       }
-    });
+    }
+
+    // 抓取並渲染歷史紀錄
+    async function fetchAndShowHistory() {
+      appendOutput(`[系統] 正在讀取 SQLite 歷史核心紀錄...`);
+
+      try {
+        const response = await fetch('/api/get_history');
+        const data = await response.json();
+
+        if (data.status === 'success' && data.history.length > 0) {
+          appendOutput(`\n時間\t\t\t問題\t\t\t解答`);
+          appendOutput(`----------------------------------------------------------------------`);
+          data.history.forEach(item => {
+            // 格式化輸出在終端機視窗中
+            appendOutput(`[${item.time}] Q: ${item.question} -> Ans: ${item.answer}`);
+          });
+          appendOutput(`----------------------------------------------------------------------`);
+        } else if (data.history.length === 0) {
+          appendOutput(`>> [提示] 宇宙核心中尚無你的歷史紀錄，快去輸入問題進行第一次問卜吧！`);
+        } else {
+          appendOutput(`[錯誤] 讀取紀錄失敗：${data.message}`);
+        }
+      } catch (error) {
+        appendOutput(`[錯誤] 無法連接後端讀取紀錄。`);
+      }
+    }
   </script>
 </body>
 
@@ -3575,6 +3537,159 @@ This project was created using `bun init` in bun v1.3.14. [Bun](https://bun.com)
 </body>
 
 </html>
+</file>
+
+<file path="package.json">
+{
+  "name": "python-report",
+  "module": "server.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch server.ts",
+    "start": "bun run server.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
+</file>
+
+<file path="server.ts">
+import { Database } from "bun:sqlite";
+
+// 1. 連接你原本的資料庫檔案（Bun 內建 SQLite 支援）
+const db = new Database("answer_book.db");
+
+// 新增：如果歷史紀錄表不存在，則自動建立
+db.run(`
+  CREATE TABLE IF NOT EXISTS HistoryRecord (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+// 模擬 Python 的 random.choices (根據權重隨機抽樣)
+function choiceWithWeights(items: any[], weights: number[]): any {
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+  let randomNum = Math.random() * totalWeight;
+  
+  for (let i = 0; i < items.length; i++) {
+    const currentWeight = weights[i]; // 先取出數值
+
+    // ✅ 關鍵修正：透過安全檢查確保 currentWeight 不是 undefined 
+    if (currentWeight !== undefined) {
+      if (randomNum < currentWeight) {
+        return items[i];
+      }
+      randomNum -= currentWeight;
+    }
+  }
+  return items[0];
+}
+
+// 2. 啟動 Bun 全端伺服器
+const server = Bun.serve({
+  // 優先讀取 Render 提供的 PORT，本地則預設 5000
+  port: process.env.PORT || 5000,
+  // 關鍵新增：在 Docker 環境下必須指定為 '0.0.0.0'
+  hostname: "0.0.0.0",
+  async fetch(req) {
+    const url = new URL(req.url);
+
+    // 路由 A：前端首頁 API - 直接渲染網頁
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      return new Response(Bun.file("templates/index.html"), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // 路由 B：宇宙解答 API（替代原本 Python Flask 的 /api/get_answer）
+    if (url.pathname === "/api/get_answer" && req.method === "GET") {
+      try {
+        // 核心邏輯 1：根據權重抽出 AnswerType
+        const types: any[] = db.query("SELECT id, name, weight FROM AnswerType").all();
+        const typeId = choiceWithWeights(
+          types.map(t => t.id),
+          types.map(t => t.weight)
+        );
+
+        // 核心邏輯 2：隨機抽出該分類下的一個模板
+        const templateRow: any = db.query(`
+          SELECT id, content FROM Template 
+          WHERE type_id = $typeId 
+          ORDER BY RANDOM() LIMIT 1
+        `).get({ $typeId: typeId });
+
+        if (!templateRow) {
+          return Response.json({ status: "error", message: "找不到對應的模板" }, { status: 404 });
+        }
+
+        const { id: templateId, content: templateContent } = templateRow;
+
+        // 核心邏輯 3 & 4：找出 Slot 並填入 Word
+        const slots: any[] = db.query("SELECT slot_name, category_id FROM TemplateSlot WHERE template_id = $templateId")
+          .all({ $templateId: templateId });
+
+        let resultMessage = templateContent;
+
+        for (const slot of slots) {
+          const wordRow: any = db.query(`
+            SELECT content FROM Word 
+            WHERE category_id = $categoryId 
+            ORDER BY RANDOM() LIMIT 1
+          `).get({ $categoryId: slot.category_id });
+
+          const word = wordRow ? wordRow.content : "";
+          // 替換掉字串中的 {thing}, {person} 等挖空
+          resultMessage = resultMessage.replace(`{${slot.slot_name}}`, word);
+        }
+
+// ----------------------------------------------------
+
+        // 🔥 【關鍵新增】將本次的占卜紀錄寫入 SQLite 資料庫
+        db.run(
+  "INSERT INTO HistoryRecord (question, answer) VALUES ($question, $answer)",
+  { 
+    "$question": userQuestion, 
+    "$answer": resultMessage 
+  }
+);
+
+        return Response.json({ status: "success", answer: resultMessage });
+
+      } catch (e: any) {
+        return Response.json({ status: "error", message: e.message }, { status: 500 });
+      }
+    }
+
+    // 🔥 【全新新增】路由 C：獲取歷史紀錄 API (限制唯讀取最新 10 筆)
+    if (url.pathname === "/api/get_history" && req.method === "GET") {
+      try {
+        const history: any[] = db.query(`
+          SELECT question, answer, datetime(created_at, 'localtime') as time 
+          FROM HistoryRecord 
+          ORDER BY id DESC 
+          LIMIT 10
+        `).all();
+
+        return Response.json({ status: "success", history: history });
+      } catch (e: any) {
+        return Response.json({ status: "error", message: e.message }, { status: 500 });
+      }
+    }
+
+    return new Response("Not Found", { status: 404 });
+  },
+});
+
+console.log(`\n🛸 [AI解答之書] 核心伺服器已由 Bun 強勢驅動！`);
+console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
 </file>
 
 <file path="test_code/0601.ipynb">

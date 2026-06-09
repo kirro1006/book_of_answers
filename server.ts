@@ -3,6 +3,16 @@ import { Database } from "bun:sqlite";
 // 1. 連接你原本的資料庫檔案（Bun 內建 SQLite 支援）
 const db = new Database("answer_book.db");
 
+// 新增：如果歷史紀錄表不存在，則自動建立
+db.run(`
+  CREATE TABLE IF NOT EXISTS HistoryRecord (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 // 模擬 Python 的 random.choices (根據權重隨機抽樣)
 function choiceWithWeights(items: any[], weights: number[]): any {
   const totalWeight = weights.reduce((sum, w) => sum + w, 0);
@@ -30,7 +40,9 @@ const server = Bun.serve({
   hostname: "0.0.0.0",
   async fetch(req) {
     const url = new URL(req.url);
-
+    // 確保 userQuestion 變數在 query 之前有被宣告（如果前面漏掉了請補上）
+    // 如果你的前端傳過來的是 question，確保它有 fallback 預設字串
+    const userQuestion = "未輸入問題 (純隨機抽卡)";
     // 路由 A：前端首頁 API - 直接渲染網頁
     if (url.pathname === "/" || url.pathname === "/index.html") {
       return new Response(Bun.file("templates/index.html"), {
@@ -79,7 +91,14 @@ const server = Bun.serve({
           resultMessage = resultMessage.replace(`{${slot.slot_name}}`, word);
         }
 
-        // 回傳 JSON 回前端
+// ----------------------------------------------------
+
+        // 🔥 【關鍵新增】將本次的占卜紀錄寫入 SQLite 資料庫
+db.run(
+  "INSERT INTO HistoryRecord (question, answer) VALUES (?, ?)",
+  [userQuestion, resultMessage]
+);
+
         return Response.json({ status: "success", answer: resultMessage });
 
       } catch (e: any) {
@@ -87,7 +106,22 @@ const server = Bun.serve({
       }
     }
 
-    // 404 處理
+    // 🔥 【全新新增】路由 C：獲取歷史紀錄 API (限制唯讀取最新 10 筆)
+    if (url.pathname === "/api/get_history" && req.method === "GET") {
+      try {
+        const history: any[] = db.query(`
+          SELECT question, answer, datetime(created_at, 'localtime') as time 
+          FROM HistoryRecord 
+          ORDER BY id DESC 
+          LIMIT 10
+        `).all();
+
+        return Response.json({ status: "success", history: history });
+      } catch (e: any) {
+        return Response.json({ status: "error", message: e.message }, { status: 500 });
+      }
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 });
