@@ -24,7 +24,10 @@ function choiceWithWeights(items: any[], weights: number[]): any {
 
 // 2. 啟動 Bun 全端伺服器
 const server = Bun.serve({
+  // 優先讀取 Render 提供的 PORT，本地則預設 5000
   port: process.env.PORT || 5000,
+  // 關鍵新增：在 Docker 環境下必須指定為 '0.0.0.0'
+  hostname: "0.0.0.0",
   async fetch(req) {
     const url = new URL(req.url);
 
