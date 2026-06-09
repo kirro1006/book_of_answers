@@ -1,178 +1,323 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="zh-TW">
 
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>解答之書 - 終端機版</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>極客終端機 - AI 解答之書</title>
   <style>
-    /* 簡易的終端機科技感樣式 */
+    /* 全域終端機風格設定 */
     body {
-      background-color: #121212;
-      color: #00ff66;
+      background-color: #0a0a0a;
+      color: #00ff33;
       font-family: 'Courier New', Courier, monospace;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
+      padding: 20px;
       margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      box-sizing: border-box;
     }
 
+    /* 終端機主視窗外殼 */
     .terminal-window {
-      width: 600px;
-      background-color: #1a1a1a;
-      border: 2px solid #333;
-      border-radius: 8px;
-      box-shadow: 0 0 20px rgba(0, 255, 102, 0.2);
+      width: 100%;
+      max-width: 800px;
+      background-color: #111;
+      /*border: 2px solid #00ff33;*/
+      box-shadow: 0 0 20px rgba(0, 255, 51, 0.2);
+      border-radius: 5px;
       overflow: hidden;
     }
 
+    /* 視窗頂部控制列 */
     .terminal-header {
-      background-color: #333;
-      padding: 5px 10px;
-      color: #fff;
-      font-size: 12px;
-      display: flex;
-      justify-content: space-between;
-    }
-
-    .terminal-body {
-      padding: 20px;
-      height: 300px;
-      overflow-y: auto;
-    }
-
-    .output {
-      margin-bottom: 15px;
-      white-space: pre-line;
-    }
-
-    .input-line {
+      background-color: #222;
+      padding: 10px;
       display: flex;
       align-items: center;
+      border-bottom: 1px solid #333;
     }
 
-    .prompt {
-      color: #00d2ff;
-      margin-right: 10px;
+    .buttons {
+      display: flex;
+      gap: 8px;
     }
 
-    button {
-      background-color: #00ff66;
-      color: #121212;
-      border: none;
-      padding: 8px 15px;
-      font-family: inherit;
-      font-weight: bold;
+    .button-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .dot-red {
+      background-color: #ff5f56;
+    }
+
+    .dot-yellow {
+      background-color: #ffbd2e;
+    }
+
+    .dot-green {
+      background-color: #27c93f;
+    }
+
+    .window-title {
+      margin-left: 20px;
+      font-size: 14px;
+      color: #888;
+    }
+
+    /* 終端機內容輸出區 */
+    .terminal-body {
+      padding: 20px;
+      height: 400px;
+      overflow-y: auto;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    /* 功能按鈕區（取代原本死板的純打字） */
+    .action-panel {
+      margin-top: 20px;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .geek-btn {
+      background-color: transparent;
+      color: #00ff33;
+      border: 1px solid #00ff33;
+      padding: 10px 20px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 15px;
       cursor: pointer;
-      border-radius: 4px;
-      margin-top: 10px;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
     }
 
-    button:hover {
-      background-color: #00cc55;
+    .geek-btn:hover {
+      background-color: #00ff33;
+      color: #0a0a0a;
+      box-shadow: 0 0 15px rgba(0, 255, 51, 0.6);
+    }
+
+    /* 🔥 動態彈出對話格 (Modal) 樣式 */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-box {
+      background-color: #111;
+      border: 2px solid #00ff33;
+      padding: 30px;
+      border-radius: 5px;
+      width: 90%;
+      max-width: 500px;
+      box-shadow: 0 0 25px rgba(0, 255, 51, 0.4);
+      text-align: left;
+    }
+
+    .modal-box h3 {
+      margin-top: 0;
+      color: #00ff33;
+    }
+
+    .modal-input {
+      width: 100%;
+      background-color: #000;
+      border: 1px solid #00ff33;
+      color: #00ff33;
+      padding: 10px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;
+      box-sizing: border-box;
+      margin-bottom: 20px;
+      outline: none;
+    }
+
+    .modal-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    /* 游標閃爍效果 */
+    .cursor {
+      display: inline-block;
+      width: 10px;
+      height: 18px;
+      background-color: #00ff33;
+      animation: blink 0.8s infinite;
+      vertical-align: middle;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
     }
   </style>
 </head>
 
 <body>
-  <div id="root">
-    <div class="terminal-window">
-      <div class="terminal-header">
-        <span>Terminal - AnswerBook.exe</span>
-        <span>● ● ●</span>
+
+  <div class="terminal-window">
+    <div class="terminal-header">
+      <div class="buttons">
+        <div class="button-dot dot-red"></div>
+        <div class="button-dot dot-yellow"></div>
+        <div class="button-dot dot-green"></div>
       </div>
-      <div class="terminal-body">
-        <div class="output" id="terminal-output">歡迎來到解答之書終端機。請冥想你的問題，然後點擊下方按鈕獲取宇宙的啟示...</div>
-        <div class="input-line">
-          <span class="prompt">></span>
-          <button id="get-answer-btn">抽取解答</button>
-        </div>
+      <div class="window-title">universe_terminal.sh</div>
+    </div>
+    <div class="terminal-body" id="output">
+      <div>[System] 系統初始化成功...</div>
+      <div>[System] 正在連線至宇宙核心解碼器...</div>
+      <div>[System] 請點擊下方指令開始占卜。</div>
+      <div>[System] 貼心提醒，問題請以封閉式問題的格式提問<span class="cursor"></span></div>
+    </div>
+  </div>
+
+  <div class="action-panel">
+    <button class="geek-btn" onclick="triggerRandomAnswer()">[ 隨機抽取解答 ]</button>
+    <button class="geek-btn" onclick="openQuestionModal()">[ 輸入問題占卜 ]</button>
+    <button class="geek-btn" onclick="fetchHistory()">[ 查看歷史紀錄 ]</button>
+  </div>
+
+  <div class="modal-overlay" id="questionModal">
+    <div class="modal-box">
+      <h3>> 請輸入你想向宇宙詢問的問題：</h3>
+      <input type="text" id="userQuestionInput" class="modal-input" placeholder="例如：我這學期期末考會過嗎？" autocomplete="off">
+      <div class="modal-buttons">
+        <button class="geek-btn" onclick="closeQuestionModal()">取消</button>
+        <button class="geek-btn" onclick="submitQuestion()">送出冥想</button>
       </div>
     </div>
   </div>
 
   <script>
-    const cmdInput = document.getElementById('cmdInput');
-    const outputHistory = document.getElementById('outputHistory');
-    const terminalBody = document.getElementById('terminalBody');
+    const outputDiv = document.getElementById('output');
+    const modal = document.getElementById('questionModal');
+    const questionInput = document.getElementById('userQuestionInput');
 
-    cmdInput.addEventListener('keydown', async function (e) {
+    // 將訊息輸出到終端機畫面的輔助函式
+    function logToTerminal(message, type = 'info') {
+      const prefix = type === 'error' ? '[Error] ' : type === 'success' ? '[Success] ' : '> ';
+      const div = document.createElement('div');
+      div.textContent = prefix + message;
+      outputDiv.appendChild(div);
+      outputDiv.scrollTop = outputDiv.scrollHeight; // 自動捲動到最底部
+    }
+
+    // 開啟彈出填寫格
+    function openQuestionModal() {
+      modal.classList.add('active');
+      questionInput.value = ''; // 清空欄位
+      setTimeout(() => questionInput.focus(), 100); // 自動聚焦
+    }
+
+    // 關閉彈出填寫格
+    function closeQuestionModal() {
+      modal.classList.remove('active');
+    }
+
+    // 監聽彈出框的 Enter 鍵送出
+    questionInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
-        const query = cmdInput.value.trim();
-        if (!query) return;
-
-        // 1. 在畫面上秀出使用者輸入的內容
-        appendOutput(`\nuser@universe:~$ ${query}`);
-        cmdInput.value = ''; // 清空輸入框
-
-        // 2. 判斷終端機指令
-        if (query === '/help') {
-          appendOutput(`系統指令說明：\n  /random  : 拋棄大腦，直接抽一則宇宙啟示。\n  /history : 查閱過去最近 10 筆問卜紀錄。\n  [隨意輸入] : 輸入你的迷惘，啟動後端資料庫進行命運評判。`);
-        } else if (query === '/history') {
-          await fetchAndShowHistory();
-        } else if (query === '/random') {
-          await callBackendAnswer(null); // 不帶問題的隨機抽卡
-        } else {
-          await callBackendAnswer(query); // 帶有問題的問卜
-        }
+        submitQuestion();
       }
     });
 
-    function appendOutput(text) {
-      outputHistory.textContent += text + '\n';
-      terminalBody.scrollTop = terminalBody.scrollHeight; // 自動滾動
-    }
-
-    // 向後端請求答案 (支援純隨機與輸入問題)
-    async function callBackendAnswer(question) {
-      appendOutput(`[系統] 正在呼叫後端核心...`);
-      if (question) {
-        appendOutput(`[系統] 已檢索備選資料庫，正在委託 AI 針對問題「${question}」進行命運評判...`);
+    // 處理 [輸入問題占卜] 送出
+    async function submitQuestion() {
+      const question = questionInput.value.trim();
+      if (!question) {
+        alert('請先輸入問題！');
+        return;
       }
 
-      try {
-        // 判斷要用 POST 傳問題，還是用 GET 純隨機抽卡
-        const fetchOptions = question
-          ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) }
-          : { method: 'GET' };
+      closeQuestionModal(); // 關閉對話框
+      logToTerminal(`使用者提問: ${question}`);
 
-        const response = await fetch('/api/get_answer', fetchOptions);
+      // 駭客炫技感：分析中動畫
+      logToTerminal('正在分析量子力學機率矩陣...', 'info');
+      logToTerminal('正在與天界大數據進行特徵匹配...', 'info');
+
+      try {
+        // 呼叫後端 API（帶上問題參數）
+        const response = await fetch(`/api/get_answer?question=${encodeURIComponent(question)}`);
         const data = await response.json();
 
         if (data.status === 'success') {
-          appendOutput(`>> 【宇宙評判解答】：${data.answer}`);
+          // 延遲 1 秒顯示解答，加強儀式感
+          setTimeout(() => {
+            logToTerminal(`宇宙給予的啟示: ${data.answer}`, 'success');
+          }, 1000);
         } else {
-          appendOutput(`[錯誤] 宇宙連線失敗：${data.message}`);
+          logToTerminal(`核心解碼失敗: ${data.message}`, 'error');
         }
       } catch (error) {
-        appendOutput(`[錯誤] 無法連接後端伺服器，請檢查 Bun 是否正在運行。`);
+        logToTerminal('無法連線到預言伺服器。', 'error');
       }
     }
 
-    // 抓取並渲染歷史紀錄
-    async function fetchAndShowHistory() {
-      appendOutput(`[系統] 正在讀取 SQLite 歷史核心紀錄...`);
+    // 處理 [隨機抽取解答] 按鈕
+    async function triggerRandomAnswer() {
+      logToTerminal('觸發隨機解答封包抽取...');
+      try {
+        // 不帶 question 參數，後端就會執行隨機抽取
+        const response = await fetch('/api/get_answer');
+        const data = await response.json();
+        if (data.status === 'success') {
+          logToTerminal(`隨機啟示: ${data.answer}`, 'success');
+        } else {
+          logToTerminal('抽取失敗。', 'error');
+        }
+      } catch (error) {
+        logToTerminal('連線異常。', 'error');
+      }
+    }
 
+    // 處理 [查看歷史紀錄] 按鈕
+    async function fetchHistory() {
+      logToTerminal('正在讀取本機 SQLite 歷史占卜日誌...');
       try {
         const response = await fetch('/api/get_history');
         const data = await response.json();
 
         if (data.status === 'success' && data.history.length > 0) {
-          appendOutput(`\n時間\t\t\t問題\t\t\t解答`);
-          appendOutput(`----------------------------------------------------------------------`);
-          data.history.forEach(item => {
-            // 格式化輸出在終端機視窗中
-            appendOutput(`[${item.time}] Q: ${item.question} -> Ans: ${item.answer}`);
+          logToTerminal('--- 歷史紀錄查詢結果 (最新10筆) ---');
+          data.history.forEach((item, index) => {
+            logToTerminal(`[${item.time}] 問: ${item.question || '無'} -> 答: ${item.answer}`);
           });
-          appendOutput(`----------------------------------------------------------------------`);
-        } else if (data.history.length === 0) {
-          appendOutput(`>> [提示] 宇宙核心中尚無你的歷史紀錄，快去輸入問題進行第一次問卜吧！`);
+          logToTerminal('----------------------------------');
         } else {
-          appendOutput(`[錯誤] 讀取紀錄失敗：${data.message}`);
+          logToTerminal('查無任何占卜紀錄。', 'info');
         }
       } catch (error) {
-        appendOutput(`[錯誤] 無法連接後端讀取紀錄。`);
+        logToTerminal('歷史紀錄讀取失敗。', 'error');
       }
     }
   </script>
