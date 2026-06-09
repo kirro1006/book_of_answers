@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>解答之書 - 終端機版</title>
+  <style>
+    /* 簡易的終端機科技感樣式 */
+    body {
+      background-color: #121212;
+      color: #00ff66;
+      font-family: 'Courier New', Courier, monospace;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    .terminal-window {
+      width: 600px;
+      background-color: #1a1a1a;
+      border: 2px solid #333;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0, 255, 102, 0.2);
+      overflow: hidden;
+    }
+
+    .terminal-header {
+      background-color: #333;
+      padding: 5px 10px;
+      color: #fff;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .terminal-body {
+      padding: 20px;
+      height: 300px;
+      overflow-y: auto;
+    }
+
+    .output {
+      margin-bottom: 15px;
+      white-space: pre-line;
+    }
+
+    .input-line {
+      display: flex;
+      align-items: center;
+    }
+
+    .prompt {
+      color: #00d2ff;
+      margin-right: 10px;
+    }
+
+    button {
+      background-color: #00ff66;
+      color: #121212;
+      border: none;
+      padding: 8px 15px;
+      font-family: inherit;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background-color: #00cc55;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root">
+    <div class="terminal-window">
+      <div class="terminal-header">
+        <span>Terminal - AnswerBook.exe</span>
+        <span>● ● ●</span>
+      </div>
+      <div class="terminal-body">
+        <div class="output" id="terminal-output">歡迎來到解答之書終端機。請冥想你的問題，然後點擊下方按鈕獲取宇宙的啟示...</div>
+        <div class="input-line">
+          <span class="prompt">></span>
+          <button id="get-answer-btn">抽取解答</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    const outputDiv = document.getElementById('terminal-output');
+    const button = document.getElementById('get-answer-btn');
+
+    button.addEventListener('click', async () => {
+      // 1. 顯示讀取中的儀式感動畫
+      button.disabled = true;
+      outputDiv.innerHTML += "\n[系統] 正在連接後端資料庫...\n[系統] 正在隨機檢索模板與權重...\n[宇宙提示] 正在思考中...";
+
+      try {
+        // 2. 透過 fetch 向 Python Flask 後端發送請求
+        const response = await fetch('/api/get_answer');
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          // 3. 將 Python 後端生成的句子渲染到畫面上
+          outputDiv.innerHTML = `\n🛸 宇宙給你的解答：\n=================================\n\n<strong>${data.answer}</strong>\n\n=================================`;
+        } else {
+          outputDiv.innerHTML += `\n[錯誤] 抽卡失敗：${data.message}`;
+        }
+      } catch (error) {
+        outputDiv.innerHTML += `\n[錯誤] 連線後端失敗，請確認 app.py 是否有正常運行。`;
+        console.error(error);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,3708 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.gitignore
+answer_book.db
+app.py
+docs/01_Project_Setup_and_Styling.md
+docs/02_Layout_and_Routing.md
+docs/03_Mock_API_and_Data_Fetching.md
+docs/04_User_Authentication_with_Clerk.md
+docs/05_Cart_Context_and_Hooks.md
+docs/06_Building_the_Cart_Page.md
+docs/07_Persisting_Cart_with_API.md
+docs/08_Checkout_and_Final_Touches.md
+front/.gitignore
+front/eslint.config.js
+front/index.html
+front/package.json
+front/public/favicon.svg
+front/public/icons.svg
+front/README.md
+front/src/App.css
+front/src/App.jsx
+front/src/assets/hero.png
+front/src/assets/react.svg
+front/src/assets/vite.svg
+front/src/assets/windows-7.webp
+front/src/index.css
+front/src/index.html
+front/src/main.jsx
+front/vite.config.js
+index.ts
+init.sql
+package.json
+README.md
+templates/index.html
+test_code/0601.ipynb
+test_code/解答之書資料庫.md
+test_code/數位媒體作業2.pdf
+test_code/answer_book.db
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="app.py">
+from flask import Flask, render_template, jsonify
+import sqlite3
+import random
+import os
+
+app = Flask(__name__, template_folder='templates')
+
+def get_db_connection():
+    """使用絕對路徑，確保 Flask 無論在哪裡啟動，都能精準讀到你上傳的這個 answer_book.db"""
+    # 取得目前 app.py 檔案所在的資料夾路徑
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    # 強制組合出正確的資料庫絕對路徑
+    db_path = os.path.join(base_dir, "answer_book.db")
+    
+    if not os.path.exists(db_path):
+        raise FileNotFoundError(f"【系統錯誤】找不到原本的資料庫檔案！請確認 answer_book.db 有和 app.py 放在同一個資料夾。目前預期路徑為: {db_path}")
+        
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+@app.route('/')
+def home():
+    """首頁：直接渲染 templates 資料夾下的 index.html"""
+    return render_template('index.html')
+
+@app.route('/api/get_answer', methods=['GET'])
+def get_answer():
+    """API 接口：隨機生成句子並回傳給前端"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. 根據權重隨機抽出 AnswerType
+        cursor.execute("SELECT id, name, weight FROM AnswerType")
+        types = cursor.fetchall()
+        type_id = random.choices(
+            [row[0] for row in types],
+            weights=[row[2] for row in types]
+        )[0]
+        
+        # 2. 隨機抽出該分類下的一個模板
+        cursor.execute("""
+            SELECT id, content FROM Template 
+            WHERE type_id = ? 
+            ORDER BY RANDOM() LIMIT 1
+        """, (type_id,))
+        template_row = cursor.fetchone()
+        
+        if not template_row:
+            return jsonify({"status": "error", "message": "找不到對應的模板"}), 404
+            
+        template_id, template_content = template_row
+        
+        # 3. 找出該模板需要填入的變數 (Slots)
+        cursor.execute("""
+            SELECT slot_name, category_id FROM TemplateSlot 
+            WHERE template_id = ?
+        """, (template_id,))
+        slots = cursor.fetchall()
+        
+        # 4. 隨機抽出變數對應的字詞並填入
+        fill_data = {}
+        for slot_name, category_id in slots:
+            cursor.execute("""
+                SELECT content FROM Word 
+                WHERE category_id = ? 
+                ORDER BY RANDOM() LIMIT 1
+            """, (category_id,))
+            word_row = cursor.fetchone()
+            fill_data[slot_name] = word_row[0] if word_row else ""
+            
+        # 5. 組合最終答案
+        result_message = template_content.format(**fill_data)
+        
+        conn.close()
+        
+        # 回傳 JSON 格式給前端
+        return jsonify({"status": "success", "answer": result_message})
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+if __name__ == '__main__':
+    # 啟動本地伺服器，預設網址為 http://127.0.0.1:5000
+    app.run(debug=True)
+</file>
+
+<file path="init.sql">
+-- 建立資料表
+CREATE TABLE IF NOT EXISTS AnswerType (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    weight INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS Template (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type_id INTEGER,
+    content TEXT NOT NULL,
+    FOREIGN KEY(type_id) REFERENCES AnswerType(id)
+);
+
+CREATE TABLE IF NOT EXISTS TemplateSlot (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id INTEGER,
+    slot_name TEXT NOT NULL,
+    category_id INTEGER,
+    FOREIGN KEY(template_id) REFERENCES Template(id)
+);
+
+CREATE TABLE IF NOT EXISTS Word (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_id INTEGER,
+    content TEXT NOT NULL
+);
+
+-- 寫入基礎測試資料
+INSERT INTO AnswerType (id, name, weight) VALUES (1, '肯定', 20);
+INSERT INTO AnswerType (id, name, weight) VALUES (2, '否定', 20);
+INSERT INTO AnswerType (id, name, weight) VALUES (3, '等待', 30);
+INSERT INTO AnswerType (id, name, weight) VALUES (4, '警告', 15);
+INSERT INTO AnswerType (id, name, weight) VALUES (5, '反思', 15);
+
+-- 建立測試模板（對應分類 1: 肯定）
+INSERT INTO Template (id, type_id, content) VALUES (1, 1, '{person}將改變你的決定。');
+
+-- 定義模板內的挖空欄位 (Slot)，對應類別編號 100
+INSERT INTO TemplateSlot (template_id, slot_name, category_id) VALUES (1, 'person', 100);
+
+-- 填入可以隨機塞入該欄位的字詞
+INSERT INTO Word (category_id, content) VALUES (100, '舊識');
+INSERT INTO Word (category_id, content) VALUES (100, '遠方的朋友');
+INSERT INTO Word (category_id, content) VALUES (100, '身邊的智者');
+</file>
+
+<file path="templates/index.html">
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>解答之書 - 終端機版</title>
+  <style>
+    /* 簡易的終端機科技感樣式 */
+    body {
+      background-color: #121212;
+      color: #00ff66;
+      font-family: 'Courier New', Courier, monospace;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    .terminal-window {
+      width: 600px;
+      background-color: #1a1a1a;
+      border: 2px solid #333;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0, 255, 102, 0.2);
+      overflow: hidden;
+    }
+
+    .terminal-header {
+      background-color: #333;
+      padding: 5px 10px;
+      color: #fff;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .terminal-body {
+      padding: 20px;
+      height: 300px;
+      overflow-y: auto;
+    }
+
+    .output {
+      margin-bottom: 15px;
+      white-space: pre-line;
+    }
+
+    .input-line {
+      display: flex;
+      align-items: center;
+    }
+
+    .prompt {
+      color: #00d2ff;
+      margin-right: 10px;
+    }
+
+    button {
+      background-color: #00ff66;
+      color: #121212;
+      border: none;
+      padding: 8px 15px;
+      font-family: inherit;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background-color: #00cc55;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root">
+    <div class="terminal-window">
+      <div class="terminal-header">
+        <span>Terminal - AnswerBook.exe</span>
+        <span>● ● ●</span>
+      </div>
+      <div class="terminal-body">
+        <div class="output" id="terminal-output">歡迎來到解答之書終端機。請冥想你的問題，然後點擊下方按鈕獲取宇宙的啟示...</div>
+        <div class="input-line">
+          <span class="prompt">></span>
+          <button id="get-answer-btn">抽取解答</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    const outputDiv = document.getElementById('terminal-output');
+    const button = document.getElementById('get-answer-btn');
+
+    button.addEventListener('click', async () => {
+      // 1. 顯示讀取中的儀式感動畫
+      button.disabled = true;
+      outputDiv.innerHTML += "\n[系統] 正在連接後端資料庫...\n[系統] 正在隨機檢索模板與權重...\n[宇宙提示] 正在思考中...";
+
+      try {
+        // 2. 透過 fetch 向 Python Flask 後端發送請求
+        const response = await fetch('/api/get_answer');
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          // 3. 將 Python 後端生成的句子渲染到畫面上
+          outputDiv.innerHTML = `\n🛸 宇宙給你的解答：\n=================================\n\n<strong>${data.answer}</strong>\n\n=================================`;
+        } else {
+          outputDiv.innerHTML += `\n[錯誤] 抽卡失敗：${data.message}`;
+        }
+      } catch (error) {
+        outputDiv.innerHTML += `\n[錯誤] 連線後端失敗，請確認 app.py 是否有正常運行。`;
+        console.error(error);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+
+</html>
+</file>
+
+<file path="test_code/解答之書資料庫.md">
+CREATE TABLE AnswerType(
+   id INTEGER PRIMARY KEY,
+   name TEXT NOT NULL,
+   weight INTEGER DEFAULT 1
+
+);
+
+CREATE TABLE Template(
+   id INTEGER PRIMARY KEY,
+   type_id INTEGER NOT NULL,
+   content TEXT NOT NULL,
+   FOREIGN KEY(type_id)
+       REFERENCES AnswerType(id)
+
+);
+
+CREATE TABLE WordCategory(
+   id INTEGER PRIMARY KEY,
+   name TEXT NOT NULL UNIQUE
+
+);
+
+CREATE TABLE Word(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   category_id INTEGER NOT NULL,
+   content TEXT NOT NULL,
+   FOREIGN KEY(category_id)
+       REFERENCES WordCategory(id)
+
+);
+
+CREATE TABLE TemplateSlot(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   template_id INTEGER NOT NULL,
+   slot_name TEXT NOT NULL,
+   category_id INTEGER NOT NULL,
+
+
+   UNIQUE(template_id, slot_name),
+
+
+   FOREIGN KEY(template_id)
+       REFERENCES Template(id),
+
+
+   FOREIGN KEY(category_id)
+       REFERENCES WordCategory(id)
+
+);
+
+INSERT INTO AnswerType (id, name, weight) VALUES
+   (1, '肯定',        20),
+   (2, '否定',        20),
+   (3, '等待',        30),
+   (4, '警告',        15),
+   (5, '反思',        15);
+
+INSERT INTO Template (id, type_id, content) VALUES
+   (1,1, '{thing}會帶來好結果。'),
+   (2,2, '現在不要相信{thing}。'),
+   (3,3, '關於{thing}還需要等待。'),
+   (4,4, '小心{thing}背後的代價。'),
+   (5,5, '或許你該重新思考{thing}。'),
+   (6,4,'{person}將改變你的{thing}。'),
+  (7,4,'在{place}等待。'),
+  (8,5,'或許該先{action}。');
+
+INSERT INTO WordCategory (id, name) VALUES
+   (1, 'thing'),
+   (2, 'person'),
+   (3, 'place'),
+   (4, 'action');
+
+INSERT INTO Word (id, category_id, content) VALUES
+   (1,1, '機會'),
+   (2,1, '決定'),
+   (3,1, '約定'),
+   (4,1, '旅程'),
+   (5,2, '某個人'),
+   (6,2, '舊識'),
+   (7,3, '家'),
+   (8,4, '睡一覺');
+
+INSERT INTO TemplateSlot (template_id, slot_name, category_id) VALUES
+   (1, 'thing',1),
+   (2, 'thing',1),
+   (3, 'thing',1),
+   (4, 'thing',1),
+   (5, 'thing',1),
+   (6, 'person',2),
+   (6, 'thing',1),
+   (7,'place',3),
+   (8,'action',4);
+
+
+
+CREATE INDEX idx_template_type
+
+ON Template(type_id);
+
+
+
+CREATE INDEX idx_word_category
+
+ON Word(category_id);
+
+
+
+
+
+| id | type_id | content          |
+
+| -- | ------- | ---------------- |
+
+| 1  | 1       | {thing}會帶來好結果。   |
+
+| 2  | 2       | 現在不要相信{thing}。   |
+
+| 3  | 3       | 關於{thing}還需要等待。  |
+
+| 4  | 4       | 小心{thing}背後的代價。  |
+
+| 5  | 5       | 或許你該重新思考{thing}。 |
+</file>
+
+<file path=".gitignore">
+# dependencies (bun install)
+node_modules
+
+# output
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
+</file>
+
+<file path="docs/01_Project_Setup_and_Styling.md">
+# 早餐時光實戰手冊 (一)：專案初始化與樣式設定 (v2025)
+
+歡迎來到「早餐時光」React 實戰手冊！在本系列教學中，我們將從零開始，使用最新、最高效的技術棧，一步步親手打造一個功能完整的線上早餐訂餐網站。
+
+本章節，我們將專注於專案的起點：建立專案並設定一個現代化、無設定檔的樣式系統。
+
+---
+
+## 1. 專案初始化 (with Vite)
+
+我們將使用 [Vite](https://vitejs.dev/) 這個現代化的前端建置工具來建立我們的 React 專案。
+
+在你的終端機中，移動到你想要放置專案的目錄，然後執行以下指令：
+
+```bash
+# 這個指令會建立一個名為 breakfast-app 的新目錄
+# 並在其中設定好一個使用 React 模板的 Vite 專案
+npm create vite@latest breakfast-app -- --template react
+```
+
+指令執行完畢後，進入這個新建立的目錄：
+
+```bash
+cd breakfast-app
+```
+
+接著，安裝專案所需的所有預設依賴套件：
+
+```bash
+# 這個指令會讀取 package.json 檔案，並下載所有需要的套件
+npm install
+```
+
+太棒了！現在你的專案已經建立完成。讓我們啟動開發伺服器，看看它最初的樣子：
+
+```bash
+# 啟動 Vite 開發伺服器
+npm run dev
+```
+
+終端機將會顯示一個本地網址（通常是 `http://localhost:5173`）。在瀏覽器中打開它，你應該會看到 Vite 和 React 的預設歡迎頁面。
+
+---
+
+## 2. 清理預設模板
+
+Vite 的預設模板提供了一些範例檔案，但我們即將建立自己的架構，所以先把它們清理乾淨。
+
+**A. 刪除以下檔案：**
+*   `src/App.css`
+*   `src/assets/react.svg`
+*   `public/vite.svg`
+
+**B. 修改 `src/App.jsx`：**
+將檔案內容替換成以下最基本的 "Hello World"：
+
+```jsx
+// src/App.jsx
+function App() {
+  return (
+    <div>
+      <h1 className="text-3xl font-bold underline">
+        Hello World!
+      </h1>
+    </div>
+  )
+}
+
+export default App
+```
+
+**C. 清空 `src/index.css`：**
+將 `src/index.css` 的所有內容刪除，我們馬上就會在這裡配置全新的 Tailwind CSS。
+
+---
+
+## 3. 設定 Tailwind CSS v4 (最新作法)
+
+Tailwind CSS v4 大幅簡化了設定流程。我們不再需要 `tailwind.config.js` 或 `postcss.config.js` 檔案了！
+
+**A. 安裝最新版 Tailwind CSS、Vite 外掛與 DaisyUI：**
+
+在終端機中（確保你仍在 `breakfast-app` 目錄下），執行以下指令來安裝所有需要的開發依賴：
+
+```bash
+# @next 標籤會安裝 v4 的預覽版本
+# @tailwindcss/vite 是 v4 官方的 Vite 整合工具
+npm install -D tailwindcss@next @tailwindcss/vite@next daisyui
+```
+
+**B. 設定 Vite 外掛：**
+
+為了讓 Vite 能夠理解並處理 Tailwind CSS v4 的新語法，我們需要在 `vite.config.js` 中載入剛剛安裝的 `@tailwindcss/vite` 外掛。
+
+**完全替換 `vite.config.js` 的內容**：
+
+```javascript
+// vite.config.js
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite' // 1. 引入 Tailwind CSS 的 Vite 外掛
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(), // 2. 將外掛加入到 plugins 陣列中
+  ],
+})
+```
+
+**C. 在 CSS 中直接配置 Tailwind 和 DaisyUI：**
+
+這是最神奇的一步。打開我們之前清空的 `src/index.css`，並貼上以下內容：
+
+```css
+/* src/index.css */
+@import "tailwindcss";
+
+/* DaisyUI V5 設定 - 直接在 CSS 中配置 */
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
+}
+```
+
+**程式碼講解：**
+*   `@import "tailwindcss";`：這一行會神奇地載入 Tailwind CSS 的所有功能，並讓 Vite 處理所有底層的編譯工作。它同時會自動掃描你專案中所有使用到 Tailwind Class 的檔案 (`.jsx`, `.html` 等)。
+*   `@plugin "daisyui" { ... }`：這是 DaisyUI v5 的新語法，可以直接在 CSS 中載入外掛並進行設定。這裡我們設定了兩個主題：`light` 是預設主題，而 `dark` 則會根據使用者作業系統的偏好來自動啟用。
+
+> **注意**：完成以上步驟後，請務必**重新啟動你的 Vite 開發伺服器**（在終端機中按下 `Ctrl + C`，然後重新執行 `npm run dev`）以確保所有新的設定和外掛都已生效。
+
+---
+
+## 4. 驗證設定
+
+讓我們修改 `src/App.jsx`，試用一下 DaisyUI 的元件，來驗證我們這套現代化的設定是否成功。
+
+```jsx
+// src/App.jsx
+function App() {
+  return (
+    <div className="p-8">
+      <h1 className="text-3xl font-bold text-primary mb-4">早餐時光</h1>
+      <p className="mb-4">我們的專案已經採用了最新的樣式設定！</p>
+      <button className="btn btn-primary">這是一個 DaisyUI 按鈕</button>
+      <button className="btn btn-secondary ml-2">這是第二個按鈕</button>
+    </div>
+  )
+}
+
+export default App
+```
+
+回到你的瀏覽器，你現在應該能看到一個帶有主題色的漂亮按鈕了！點擊它們時還會有互動效果。這證明我們全新的、無設定檔的 Tailwind CSS v4 + DaisyUI v5 流程已經成功運作！
+
+---
+
+**做得太棒了！**
+
+你已經使用了當前最高效的方式，完成了專案的初始化和樣式系統設定。我們現在有了一個極其穩固且現代化的基礎。
+
+在下一個章節，我們將會繼續建立專案的**基本佈局（Layout）和頁面路由（Routing）**。
+</file>
+
+<file path="docs/02_Layout_and_Routing.md">
+# 早餐時光實戰手冊 (二)：頁面佈局與路由設定
+
+在上一章，我們成功初始化了專案並配置了強大的樣式系統 (Tailwind CSS + DaisyUI)。現在，我們的專案還只是一個單一的頁面。是時候為它建立一個完整的網站骨架，並讓它能夠在不同「頁面」之間導航了。
+
+本章節，我們將專注於兩大重點：
+1.  **頁面佈局 (Layout)**：建立網站共同的頁首 (Header) 和頁尾 (Footer)。
+2.  **前端路由 (Routing)**：使用 `react-router-dom` 來管理我們的頁面，實現無刷新切換頁面的單頁應用 (SPA) 效果。
+
+---
+
+## 1. 建立專業的資料夾結構
+
+一個清晰的資料夾結構是專案能夠長期維護的關鍵。讓我們在 `src` 目錄下建立一些標準的資料夾來組織我們的程式碼。
+
+在你的專案根目錄（`breakfast-app`）下，你可以手動或透過終端機建立以下資料夾：
+
+```bash
+# 在 src 目錄下建立一系列的子目錄
+mkdir -p src/components/layout src/pages src/hooks src/utils
+```
+
+**資料夾職責說明：**
+*   `src/components`: 存放可重用的 React 元件。
+    *   `layout`: 專門存放像 `Header`, `Footer` 這樣的佈局型元件。
+*   `src/pages`: 存放代表一個完整頁面的元件，例如首頁、菜單頁。
+*   `src/hooks`: 存放我們自訂的 React Hooks (例如，未來用來獲取資料的 Hook)。
+*   `src/utils`: 存放一些共用的輔助函式 (Helper functions)。
+
+---
+
+## 2. 建立佈局元件 (Layout Components)
+
+現在，讓我們來建立網站的頁首和頁尾。
+
+**A. 建立 `Header.jsx`**
+
+在 `src/components/layout/` 目錄下建立一個新檔案 `Header.jsx`，並貼上以下內容：
+
+```jsx
+// src/components/layout/Header.jsx
+import React from 'react';
+
+const Header = () => {
+  return (
+    <header className="navbar bg-base-100 shadow-lg">
+      <div className="navbar-start">
+        <a href="/" className="btn btn-ghost text-xl font-bold text-primary">
+          🍳 早餐時光
+        </a>
+      </div>
+      <div className="navbar-center hidden md:flex">
+        <ul className="menu menu-horizontal px-1">
+          <li><a href="/">首頁</a></li>
+          <li><a href="/menu">美味菜單</a></li>
+          <li><a href="/about">關於我們</a></li>
+        </ul>
+      </div>
+      <div className="navbar-end">
+        <a href="/cart" className="btn btn-ghost btn-circle">
+          <div className="indicator">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+            <span className="badge badge-sm indicator-item badge-primary">0</span>
+          </div>
+        </a>
+      </div>
+    </header>
+  );
+};
+
+export default Header;
+```
+> 我們暫時使用 `<a>` 標籤，稍後會將它們換成 `react-router-dom` 提供的 `<Link>` 元件。
+
+**B. 建立 `Footer.jsx`**
+
+在 `src/components/layout/` 目錄下建立一個新檔案 `Footer.jsx`：
+
+```jsx
+// src/components/layout/Footer.jsx
+import React from 'react';
+
+const Footer = () => {
+  const currentYear = new Date().getFullYear();
+
+  return (
+    <footer className="footer footer-center p-4 bg-base-300 text-base-content">
+      <aside>
+        <p>Copyright © {currentYear} - All right reserved by 早餐時光 Ltd</p>
+      </aside>
+    </footer>
+  );
+};
+
+export default Footer;
+```
+
+---
+
+## 3. 建立初步的頁面元件
+
+接下來，我們在 `src/pages/` 目錄中建立幾個簡單的頁面元件作為內容的佔位符。
+
+*   `src/pages/Home.jsx`:
+    ```jsx
+    import React from 'react';
+    const Home = () => <h1 className="text-4xl">首頁</h1>;
+    export default Home;
+    ```
+*   `src/pages/Menu.jsx`:
+    ```jsx
+    import React from 'react';
+    const Menu = () => <h1 className="text-4xl">美味菜單</h1>;
+    export default Menu;
+    ```
+*   `src/pages/About.jsx`:
+    ```jsx
+    import React from 'react';
+    const About = () => <h1 className="text-4xl">關於我們</h1>;
+    export default About;
+    ```
+*   `src/pages/Cart.jsx`:
+    ```jsx
+    import React from 'react';
+    const Cart = () => <h1 className="text-4xl">購物車</h1>;
+    export default Cart;
+    ```
+
+---
+
+## 4. 設定前端路由 (React Router)
+
+這是本章最關鍵的一步。我們將安裝並設定 `react-router-dom` 來管理頁面之間的切換。
+
+**A. 安裝 React Router:**
+
+```bash
+npm install react-router-dom
+```
+
+**B. 修改 `App.jsx` 作為佈局容器:**
+
+我們需要修改 `App.jsx`，讓它成為一個「樣板」。它將會渲染共用的 `Header` 和 `Footer`，並在中間為不同的頁面內容預留一個「插座」。
+
+將 `src/App.jsx` 的內容更新為：
+
+```jsx
+// src/App.jsx
+import React from 'react';
+import { Outlet } from 'react-router-dom'; // 匯入 Outlet
+import Header from './components/layout/Header';
+import Footer from './components/layout/Footer';
+
+function App() {
+  return (
+    <div className="min-h-screen flex flex-col bg-base-100">
+      <Header />
+      <main className="flex-1 container mx-auto px-4 py-8">
+        {/* Outlet 是 react-router 的一個特殊元件，
+            它會根據當前的 URL，將對應的子路由頁面元件渲染到這裡 */}
+        <Outlet />
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+export default App;
+```
+
+**C. 在 `main.jsx` 中定義路由規則:**
+
+最後，我們需要告訴 React Router 哪個 URL 對應哪個頁面。這個設定將在我們應用程式的進入點 `src/main.jsx` 中完成。
+
+將 `src/main.jsx` 的內容**完全替換**為以下程式碼：
+
+```jsx
+// src/main.jsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+
+// 引入我們的 CSS 和元件
+import './index.css';
+import App from './App.jsx';
+import Home from './pages/Home.jsx';
+import Menu from './pages/Menu.jsx';
+import About from './pages/About.jsx';
+import Cart from './pages/Cart.jsx';
+
+// 建立路由設定物件
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <App />, // 使用 App 作為所有頁面的父層佈局
+    // 在 children 中定義子路由
+    children: [
+      {
+        index: true, // index: true 表示這個是預設的子路由
+        element: <Home />,
+      },
+      {
+        path: "menu",
+        element: <Menu />,
+      },
+      {
+        path: "about",
+        element: <About />,
+      },
+      {
+        path: "cart",
+        element: <Cart />,
+      },
+    ],
+  },
+]);
+
+// 渲染應用程式，傳入 RouterProvider
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <RouterProvider router={router} />
+  </React.StrictMode>
+);
+```
+
+**程式碼講解：**
+*   `createBrowserRouter`：這是建立路由器的函式。
+*   `RouterProvider`：這是一個元件，它會接收我們建立的 `router` 設定，並讓整個應用程式都能感知到路由的存在。
+*   在設定物件中，我們定義了父路由 `/` 使用 `App` 元件，這意味著所有匹配到的子路由（`Home`, `Menu` 等）都會被渲染到 `App` 元件的 `<Outlet />` 位置。
+
+---
+
+## 5. 修正導覽列連結
+
+最後一步，回到 `src/components/layout/Header.jsx`，將原本的 `<a>` 標籤換成 React Router 提供的 `<Link>` 元件。這樣點擊連結時才不會重新整理整個頁面。
+
+**修改 `src/components/layout/Header.jsx`：**
+
+```jsx
+// src/components/layout/Header.jsx
+import React from 'react';
+// 匯入 Link 元件
+import { Link } from 'react-router-dom';
+
+const Header = () => {
+  return (
+    <header className="navbar bg-base-100 shadow-lg">
+      <div className="navbar-start">
+        {/* 將 a 換成 Link */}
+        <Link to="/" className="btn btn-ghost text-xl font-bold text-primary">
+          🍳 早餐時光
+        </Link>
+      </div>
+      <div className="navbar-center hidden md:flex">
+        <ul className="menu menu-horizontal px-1">
+          {/* 將 a 換成 Link */}
+          <li><Link to="/">首頁</Link></li>
+          <li><Link to="/menu">美味菜單</Link></li>
+          <li><Link to="/about">關於我們</Link></li>
+        </ul>
+      </div>
+      <div className="navbar-end">
+        {/* 將 a 換成 Link */}
+        <Link to="/cart" className="btn btn-ghost btn-circle">
+          <div className="indicator">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+            <span className="badge badge-sm indicator-item badge-primary">0</span>
+          </div>
+        </Link>
+      </div>
+    </header>
+  );
+};
+
+export default Header;
+```
+
+---
+
+**大功告成！**
+
+現在重新啟動你的開發伺服器 (`npm run dev`)，你應該能看到一個包含頁首和頁尾的完整網站佈局。試著點擊導覽列中的「首頁」、「美味菜單」等連結，你會發現頁面中間的內容會立刻切換，而且整個瀏覽器頁面沒有重新整理！
+
+我們已經成功地為應用程式打下了堅實的結構基礎。
+
+在下一個章節，我們將會**設定後端模擬伺服器 (Mock API Server)，並從中獲取真實的菜單資料**，讓我們的「美味菜單」頁面不再只是一個標題。
+</file>
+
+<file path="docs/03_Mock_API_and_Data_Fetching.md">
+# 早餐時光實戰手冊 (三)：模擬 API 與資料獲取
+
+目前為止，我們的應用程式已經有了漂亮的佈局和頁面切換功能，但所有內容都是靜態寫死在程式碼裡的。在這一章，我們將邁出成為一個「動態」應用程式的關鍵一步：從後端獲取資料並顯示它。
+
+由於我們還沒有真實的後端伺服器，我們將使用一個名為 `json-server` 的神奇工具，來快速模擬出一個 REST API。
+
+本章目標：
+1.  設定並啟動一個模擬 API 伺服器。
+2.  建立一個自訂 Hook (`useMenu`) 來封裝獲取資料的邏輯。
+3.  在「美味菜單」頁面中，動態地顯示我們獲取到的菜單項目。
+
+---
+
+## 1. 設定模擬 API (`json-server`)
+
+`json-server` 是一個能讓你用一個簡單的 JSON 檔案，在 30 秒內建立出一個功能完整的 REST API 的工具。這對於前端開發者來說非常方便，因為我們不再需要等待後端開發完成才能開始工作。
+
+**A. 安裝 `json-server`:**
+
+在你的專案根目錄 (`breakfast-app`) 下，執行以下指令：
+
+```bash
+# 將 json-server 安裝為開發依賴
+npm install -D json-server
+```
+
+**B. 建立資料檔案 (`db.json`):**
+
+首先，在專案的**根目錄**（與 `src` 同層）建立一個名為 `json-server` 的新資料夾。然後，在該資料夾中建立一個 `db.json` 檔案。
+
+`breakfast-app/json-server/db.json`
+
+將以下 JSON 內容貼到 `db.json` 檔案中。這將是我們 API 的資料來源：
+
+```json
+{
+  "menu": [
+    {
+      "id": "1",
+      "category": "breakfast",
+      "name": "經典早餐",
+      "description": "包含煎蛋、培根、吐司和咖啡",
+      "price": 25,
+      "image": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "id": "2",
+      "category": "breakfast",
+      "name": "健康早餐",
+      "description": "包含燕麥、水果和優格",
+      "price": 20,
+      "image": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "id": "5",
+      "category": "breakfast",
+      "name": "漢堡系列",
+      "description": "美式經典漢堡",
+      "price": 30,
+      "image": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "id": "6",
+      "category": "breakfast",
+      "name": "披薩系列",
+      "description": "手工現烤披薩",
+      "price": 22,
+      "image": "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "id": "8",
+      "category": "drink",
+      "name": "美式咖啡",
+      "description": "經典美式咖啡，提神醒腦",
+      "price": 15,
+      "image": "https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "id": "9",
+      "category": "drink",
+      "name": "拿鐵",
+      "description": "香濃牛奶與咖啡的完美結合",
+      "price": 20,
+      "image": "https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?auto=format&fit=crop&w=800&q=80"
+    }
+  ]
+}
+```
+
+**C. 在 `package.json` 中新增啟動腳本:**
+
+為了方便啟動這個 API 伺服器，我們在 `package.json` 的 `scripts` 區塊中加入一個新指令。
+
+打開 `package.json`，在 `scripts` 中加入 `"mock-api"` 這一行：
+
+```json
+// package.json
+{
+  // ...
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview",
+    "mock-api": "json-server --watch json-server/db.json --port 3301"
+  },
+  // ...
+}
+```
+
+**D. 啟動模擬 API 伺服器:**
+
+現在，你需要**開啟一個新的終端機視窗**（保持原本執行 `npm run dev` 的視窗開啟），並在其中執行：
+
+```bash
+npm run mock-api
+```
+
+成功後，你會看到 `json-server` 的提示，告訴你 API 已經在 `http://localhost:3301` 上運行，並且有一個 `/menu` 的資源路徑。用瀏覽器打開 `http://localhost:3301/menu`，你應該能看到剛剛我們定義的 JSON 資料。
+
+> **重要提示**：在接下來的開發中，你需要保持這兩個終端機視窗都處於開啟狀態：一個運行 `npm run dev`（前端），另一個運行 `npm run mock-api`（後端模擬）。
+
+---
+
+## 2. 建立自訂 Hook (`useMenu`)
+
+為了讓獲取資料的邏輯可以被重用，並且不讓頁面元件變得過於臃腫，最佳實踐是將獲取資料的邏輯封裝在一個自訂 Hook 中。
+
+在 `src/hooks/` 目錄下建立一個新檔案 `useMenu.js`，並貼上以下內容：
+
+```jsx
+// src/hooks/useMenu.js
+import { useState, useEffect } from 'react';
+
+export default function useMenu() {
+  const [menuItems, setMenuItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    // 定義一個非同步函式來獲取資料
+    const fetchMenuItems = async () => {
+      try {
+        // 使用 Fetch API 向我們的模擬伺服器請求資料
+        const response = await fetch('http://localhost:3301/menu');
+        if (!response.ok) {
+          throw new Error('無法獲取菜單資料');
+        }
+        const data = await response.json();
+        setMenuItems(data);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        // 無論成功或失敗，最後都將載入狀態設為 false
+        setIsLoading(false);
+      }
+    };
+
+    fetchMenuItems();
+  }, []); // 空依賴陣列 [] 表示這個 effect 只在元件掛載時執行一次
+
+  // 回傳狀態和資料
+  return { menuItems, isLoading, error };
+}
+```
+
+**程式碼講解：**
+*   我們使用 `useState` 來管理三個重要的狀態：`menuItems` (儲存資料)、`isLoading` (顯示載入中)、`error` (顯示錯誤訊息)。
+*   我們使用 `useEffect` 來在元件首次渲染後執行獲取資料的副作用 (Side Effect)。
+*   `fetch` 是瀏覽器內建的 API，用來發送網路請求。
+*   `try...catch...finally` 語法確保我們能優雅地處理成功、失敗和載入完成等不同情況。
+*   最後，這個 Hook 回傳一個物件，包含了資料和所有相關狀態，供元件使用。
+
+---
+
+## 3. 在菜單頁面顯示資料
+
+現在萬事俱備，只欠東風。讓我們來修改「美味菜單」頁面，讓它使用 `useMenu` 這個 Hook 來顯示真實的資料。
+
+首先，我們先建立一個格式化貨幣的輔助函式。在 `src/utils/` 目錄下建立 `helpers.js`：
+```javascript
+// src/utils/helpers.js
+export function formatCurrency(amount) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+```
+
+接著，**完全替換** `src/pages/Menu.jsx` 的內容：
+
+```jsx
+// src/pages/Menu.jsx
+import React from 'react';
+import useMenu from '../hooks/useMenu';
+import { formatCurrency } from '../utils/helpers';
+
+const Menu = () => {
+  // 一行程式碼，搞定資料獲取的所有複雜邏輯！
+  const { menuItems, isLoading, error } = useMenu();
+
+  // 處理載入中的情況
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center py-20">
+        <span className="loading loading-spinner loading-lg text-primary" />
+      </div>
+    );
+  }
+
+  // 處理發生錯誤的情況
+  if (error) {
+    return (
+      <div className="alert alert-error shadow-lg">
+        <span>載入菜單資料時發生錯誤：{error}</span>
+      </div>
+    );
+  }
+
+  // 成功獲取資料，渲染菜單列表
+  return (
+    <div className="space-y-12">
+      <section>
+        <h1 className="text-3xl font-bold mb-6">美味菜單</h1>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+          {menuItems.map((item) => (
+            <div key={item.id} className="card bg-base-100 shadow-xl">
+              <figure>
+                <img src={item.image} alt={item.name} className="w-full h-48 object-cover" />
+              </figure>
+              <div className="card-body">
+                <h2 className="card-title">{item.name}</h2>
+                <p>{item.description}</p>
+                <p className="text-lg font-semibold">
+                  {formatCurrency(item.price)}
+                </p>
+                <div className="card-actions justify-end">
+                  <button className="btn btn-primary">
+                    加入購物車
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default Menu;
+```
+
+---
+
+**見證奇蹟的時刻！**
+
+回到你的瀏覽器，並切換到「美味菜單」頁面。你應該會先短暫地看到一個載入中的動畫，然後是從 `db.json` 來的菜單項目，以卡片的形式漂亮地呈現在你眼前！
+
+我們成功地將一個靜態頁面，改造成了從後端 API 動態載入資料的頁面。這是在建構真實世界應用程式中非常重要的一步。
+
+在下一個章節，我們將要處理一個更核心的功能：**使用者驗證 (Authentication)**。我們將引入第三方服務 Clerk，讓使用者可以註冊和登入，為之後的「加入購物車」功能鋪路。
+</file>
+
+<file path="docs/04_User_Authentication_with_Clerk.md">
+# 早餐時光實戰手冊 (四)：使用者驗證與 Clerk 整合
+
+我們的應用程式越來越有模有樣了！現在，我們需要一個方法來「識別」使用者，這樣他們才能擁有自己的購物車，並最終完成下單。這就是「使用者驗證」(Authentication) 的作用。
+
+從頭打造一個安全的使用者驗證系統非常複雜，涉及到密碼學、資料庫安全、Session 管理等多個領域。幸運的是，現在有許多優秀的第三方服務可以為我們處理這一切。在本教學中，我們將使用 [Clerk](https://clerk.com/)，它專為現代 React 框架設計，整合起來非常簡單。
+
+本章目標：
+1.  設定 Clerk 帳號並將其整合進我們的 React 專案。
+2.  建立登入、註冊頁面。
+3.  在導覽列加入一個動態的使用者選單（已登入/未登入狀態）。
+4.  保護我們的功能，例如只允許已登入的使用者將商品加入購物車。
+
+---
+
+## 1. 建立你的 Clerk 應用程式
+
+**A. 註冊 Clerk 帳號**
+
+前往 [clerk.com](https://clerk.com/) 並註冊一個免費帳號。
+
+**B. 建立一個新的應用程式**
+
+登入 Clerk 儀表板 (Dashboard) 後，點擊「Add application」按鈕。你可以將應用程式命名為 "Breakfast App"，並選擇你希望使用者使用的登入方式（例如 Email, Google, etc.）。
+
+**C. 取得 API Keys**
+
+建立應用程式後，Clerk 會引導你到 API Keys 頁面。我們需要的是 `Publishable key`。它通常以 `pk_test_` 開頭。
+
+![Clerk Publishable Key](https://clerk.com/docs/images/quickstarts/get-api-keys.svg)
+
+請複製這把 `Publishable key`，我們馬上就會用到它。
+
+---
+
+## 2. 在 React 專案中整合 Clerk
+
+**A. 安裝 Clerk React 套件**
+
+回到你的專案終端機，安裝 Clerk 的 React 函式庫：
+
+```bash
+npm install @clerk/clerk-react
+```
+
+**B. 設定環境變數**
+
+像 API Key 這類的設定值，最佳實踐是將它們儲存在「環境變數」中，而不是直接寫死在程式碼裡。
+
+在你的專案根目錄 (`breakfast-app`) 建立一個名為 `.env.local` 的檔案。
+
+`breakfast-app/.env.local`
+
+然後，在檔案中加入以下內容，並將 `pk_test_...` 換成你剛剛從 Clerk 儀表板複製的 `Publishable key`：
+
+```
+VITE_CLERK_PUBLISHABLE_KEY="pk_test_YOUR_PUBLISHABLE_KEY"
+```
+
+> **重要提示**：Vite 要求所有要在前端程式碼中存取的環境變數都必須以 `VITE_` 作為前綴。建立或修改 `.env.local` 檔案後，你需要**重新啟動你的 Vite 開發伺服器**（在終端機中按下 `Ctrl + C`，然後重新執行 `npm run dev`）才能讓新的環境變數生效。
+
+**C. 用 `ClerkProvider` 包裹你的應用**
+
+和 `RouterProvider` 類似，Clerk 也需要一個 `Provider` 元件來包裹整個應用程式，以便在任何地方都能存取到使用者的登入狀態。
+
+打開 `src/main.jsx`，並進行以下修改：
+
+```jsx
+// src/main.jsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { ClerkProvider } from '@clerk/clerk-react'; // 1. 匯入 ClerkProvider
+
+// ... 引入其他元件 ...
+import './index.css';
+import App from './App.jsx';
+// ...
+
+// 2. 獲取環境變數中的 Publishable Key
+const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+if (!clerkPublishableKey) {
+  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY. Please add it to your .env.local file.");
+}
+
+const router = createBrowserRouter([
+  // ... 路由設定保持不變 ...
+]);
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    {/* 3. 使用 ClerkProvider 包裹 RouterProvider */}
+    <ClerkProvider publishableKey={clerkPublishableKey}>
+      <RouterProvider router={router} />
+    </ClerkProvider>
+  </React.StrictMode>
+);
+```
+
+---
+
+## 3. 建立驗證相關的頁面與元件
+
+Clerk 最棒的一點是它提供了開箱即用的 UI 元件，我們只需要將它們放到對應的頁面即可。
+
+**A. 建立登入/註冊頁面**
+
+*   `src/pages/Login.jsx`:
+    ```jsx
+    import { SignIn } from "@clerk/clerk-react";
+
+    export default function LoginPage() {
+      return (
+        <div className="flex justify-center items-center py-12">
+          <SignIn path="/login" />
+        </div>
+      );
+    }
+    ```
+
+*   `src/pages/Register.jsx`:
+    ```jsx
+    import { SignUp } from "@clerk/clerk-react";
+
+    export default function RegisterPage() {
+      return (
+        <div className="flex justify-center items-center py-12">
+          <SignUp path="/register" />
+        </div>
+      );
+    }
+    ```
+
+**B. 更新路由設定**
+
+打開 `src/main.jsx`，在 `children` 陣列中加入這兩個新頁面的路由規則：
+
+```jsx
+// src/main.jsx
+
+// ... 匯入新頁面
+import LoginPage from './pages/Login.jsx';
+import RegisterPage from './pages/Register.jsx';
+
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <App />,
+    children: [
+      // ... 其他路由 ...
+      {
+        path: "cart",
+        element: <Cart />,
+      },
+      // 加入以下兩個新路由
+      {
+        path: "login",
+        element: <LoginPage />,
+      },
+      {
+        path: "register",
+        element: <RegisterPage />,
+      },
+    ],
+  },
+]);
+
+// ...
+```
+
+**C. 建立動態使用者選單 (`UserMenu`)**
+
+我們需要在 `Header` 中顯示一個選單，它會根據使用者是否登入而顯示不同的內容。
+
+在 `src/components/layout/` 目錄下建立 `UserMenu.jsx`：
+
+```jsx
+// src/components/layout/UserMenu.jsx
+import { Link } from 'react-router-dom';
+import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
+
+export default function UserMenu() {
+  return (
+    <>
+      {/* 當使用者登出時，顯示登入按鈕 */}
+      <SignedOut>
+        <Link to="/login" className="btn btn-ghost">
+          登入
+        </Link>
+      </SignedOut>
+      {/* 當使用者登入時，顯示 Clerk 提供的 UserButton */}
+      <SignedIn>
+        <UserButton afterSignOutUrl="/" />
+      </SignedIn>
+    </>
+  );
+}
+```
+
+**D. 在 `Header` 中使用 `UserMenu`**
+
+打開 `src/components/layout/Header.jsx`，在 `navbar-end` 的區塊，加入 `<UserMenu />`。
+
+```jsx
+// src/components/layout/Header.jsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+import UserMenu from './UserMenu'; // 匯入 UserMenu
+
+const Header = () => {
+  return (
+    <header className="navbar ...">
+      {/* ... */}
+      <div className="navbar-end">
+        <Link to="/cart" className="btn btn-ghost btn-circle">
+          {/* ... 購物車圖示 ... */}
+        </Link>
+        
+        {/* 在這裡加入使用者選單 */}
+        <UserMenu />
+      </div>
+    </header>
+  );
+};
+
+export default Header;
+```
+
+現在，重新整理你的應用程式，你應該會在右上角看到「登入」按鈕。點擊它，你會看到 Clerk 提供的精美登入表單。你可以試著註冊一個新帳號並登入，登入成功後，原本的按鈕會變成一個使用者頭像的選單！
+
+---
+
+## 4. 保護你的功能
+
+現在我們可以識別使用者了，讓我們來利用這個狀態。我們來修改「美味菜單」頁面，只讓已登入的使用者能夠點擊「加入購物車」按鈕。
+
+**修改 `src/pages/Menu.jsx`:**
+
+```jsx
+// src/pages/Menu.jsx
+import React from 'react';
+import useMenu from '../hooks/useMenu';
+import { formatCurrency } from '../utils/helpers';
+import { useUser } from '@clerk/clerk-react'; // 1. 匯入 useUser Hook
+
+const Menu = () => {
+  const { menuItems, isLoading, error } = useMenu();
+  const { isSignedIn } = useUser(); // 2. 取得登入狀態
+
+  // ... 載入和錯誤處理 ...
+
+  return (
+    <div className="space-y-12">
+      {/* ... */}
+      <div className="grid ...">
+        {menuItems.map((item) => (
+          <div key={item.id} className="card ...">
+            {/* ... */}
+            <div className="card-body">
+              {/* ... */}
+              <div className="card-actions justify-end">
+                {/* 3. 根據登入狀態決定按鈕的行為和外觀 */}
+                <button
+                  className="btn btn-primary"
+                  disabled={!isSignedIn}
+                >
+                  {isSignedIn ? "加入購物車" : "請先登入"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default Menu;
+```
+
+現在，當你處於登出狀態時，菜單頁面上的所有「加入購物車」按鈕都會變成不可點擊的「請先登入」狀態。
+
+---
+
+**完美！**
+
+我們的應用程式現在擁有了一個完整且專業的使用者驗證流程。我們不僅能讓使用者登入註冊，還能根據他們的登入狀態來控制 UI 的行為。
+
+我們已經為實現真正的購物車功能鋪平了所有道路。在下一個，也是最核心的章節中，我們將會**動手建立我們的 `CartContext`**，使用 React 的 Context API 來管理購物車的全域狀態。
+</file>
+
+<file path="docs/05_Cart_Context_and_Hooks.md">
+# 早餐時光實戰手冊 (五)：購物車狀態管理 (Context API)
+
+恭喜你來到本系列教學最核心的一章！我們即將為「早餐時光」應用程式打造它的心臟——購物車系統。這不僅僅是關於加入商品，更是關於學習如何在一個複雜的 React 應用中，優雅地管理「全域狀態」。
+
+## 1. 為什麼需要「全域狀態管理」？
+
+想像一下購物車的狀態：裡面有哪些商品、總共有幾件、總金額多少... 這個狀態在很多地方都會被用到：
+*   `Header` 元件需要知道商品總數，來顯示在購物車圖示上。
+*   `Menu` 元件需要一個「加入購物車」的函式。
+*   `Cart` 頁面需要顯示所有商品，並能修改它們的數量或將其刪除。
+
+如果我們把這個狀態放在最頂層的 `App.jsx` 元件中，要如何將它傳遞給深層的子元件呢？我們可能需要這樣做：
+
+`App` -> `Header` -> `...` -> `CartIcon` (傳遞 `cartCount`)
+`App` -> `MenuPage` -> `MenuList` -> `MenuItem` (傳遞 `addToCart` 函式)
+
+這種層層傳遞 props 的方式，被稱為 **"Props Drilling"（屬性鑽取）**。它會讓程式碼變得非常混亂且難以維護。
+
+為了解決這個問題，React 提供了一個內建的解決方案：**Context API**。
+
+**Context API** 允許我們建立一個「全域」的狀態儲藏室，任何被授權的元件，無論它在多深層的位置，都可以直接存取這個儲藏室裡的狀態，而無需透過中間元件傳遞。
+
+---
+
+## 2. Context API 的三劍客
+
+我們的購物車系統將由三個核心部分組成：
+
+1.  **Context 物件**: 使用 `createContext` 建立，像是一個空的「狀態容器」。
+2.  **Provider 元件**: 將狀態和操作狀態的函式「提供」給所有子元件。這是我們所有邏輯的家。
+3.  **自訂 Hook**: 一個我們自己寫的 Hook (例如 `useCart`)，讓其他元件能方便地「取用」狀態。
+
+讓我們動手來建立它們。
+
+---
+
+## 3. 建立 `CartContext` 和 `useCart` Hook
+
+**A. 建立 Context 物件**
+
+在 `src/` 下建立一個新目錄 `contexts`。然後在其中建立 `cartContext.js`：
+`src/contexts/cartContext.js`
+```javascript
+import { createContext } from "react";
+
+// 建立一個新的 Context 物件，初始值為 null
+const CartContext = createContext(null);
+
+export default CartContext;
+```
+
+**B. 建立 `useCart` Hook**
+
+接著，在 `src/hooks/` 目錄下建立 `useCart.js`。這個 Hook 是一個捷徑，讓元件可以輕鬆地存取 `CartContext`。
+
+`src/hooks/useCart.js`
+```javascript
+import { useContext } from "react";
+import CartContext from "../contexts/cartContext.js";
+
+export default function useCart() {
+  const context = useContext(CartContext);
+  if (context === null) {
+    // 建立一個保護機制，確保這個 Hook 只在 CartProvider 內部使用
+    throw new Error("useCart 必須在 CartProvider 中使用");
+  }
+  return context;
+}
+```
+
+---
+
+## 4. 建立 `CartProvider` (核心邏輯)
+
+這是我們系統的大腦。我們將在這裡管理購物車的狀態，並定義所有相關的操作。
+
+在 `src/contexts/` 目錄下建立 `CartProvider.jsx`。
+
+`src/contexts/CartProvider.jsx`
+```jsx
+import React, { useState, useMemo } from 'react';
+import CartContext from './cartContext';
+
+// 為了方便說明，我們先從一個只存在於前端記憶體的購物車開始
+export function CartProvider({ children }) {
+  const [cartItems, setCartItems] = useState([]);
+
+  // 加入購物車的函式
+  const addToCart = (menuItem) => {
+    setCartItems(prevItems => {
+      // 檢查商品是否已在購物車中
+      const existingItem = prevItems.find(item => item.id === menuItem.id);
+      if (existingItem) {
+        // 如果已存在，數量 +1
+        return prevItems.map(item =>
+          item.id === menuItem.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
+      } else {
+        // 如果是新商品，加入陣列，數量設為 1
+        return [...prevItems, { ...menuItem, quantity: 1 }];
+      }
+    });
+  };
+
+  // 從購物車移除的函式
+  const removeFromCart = (itemId) => {
+    setCartItems(prevItems => prevItems.filter(item => item.id !== itemId));
+  };
+
+  // 計算購物車商品總數
+  const cartCount = useMemo(() => {
+    return cartItems.reduce((total, item) => total + item.quantity, 0);
+  }, [cartItems]);
+
+  // 我們要提供給所有子元件的「值」
+  const value = useMemo(() => ({
+    cartItems,
+    cartCount,
+    addToCart,
+    removeFromCart,
+  }), [cartItems, cartCount]);
+
+  return (
+    <CartContext.Provider value={value}>
+      {children}
+    </CartContext.Provider>
+  );
+}
+```
+
+**程式碼講解 (非常重要！):**
+1.  我們使用 `useState` 來管理一個 `cartItems` 陣列。
+2.  `addToCart` 函式處理了新增商品或增加已存在商品數量的邏輯。
+3.  `cartCount` 使用 `useMemo` 進行了效能優化，只有在 `cartItems` 改變時，它才會重新計算總數。
+4.  `value` 物件同樣使用 `useMemo` 包裝，它將我們想要分享的**狀態** (`cartItems`, `cartCount`) 和**函式** (`addToCart`) 捆綁在一起。
+5.  最後，`CartContext.Provider` 元件將這個 `value` 「廣播」給被它包裹的所有 `children`。
+
+---
+
+## 5. 在應用程式中啟用 `CartProvider`
+
+現在我們有了 Provider，需要將它放置在元件樹的頂層，以便所有頁面都能存取到它。最佳位置就在 `main.jsx` 中，包裹在 `ClerkProvider` 的內部。
+
+**修改 `src/main.jsx`:**
+
+```jsx
+// src/main.jsx
+// ... 其他 import
+import { CartProvider } from './contexts/CartProvider'; // 1. 匯入 CartProvider
+
+// ...
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <ClerkProvider publishableKey={clerkPublishableKey}>
+      {/* 2. 用 CartProvider 包裹 RouterProvider */}
+      <CartProvider>
+        <RouterProvider router={router} />
+      </CartProvider>
+    </ClerkProvider>
+  </React.StrictMode>
+);
+```
+
+---
+
+## 6. 在元件中使用購物車功能！
+
+見證奇蹟的時刻到了！讓我們來改造 `Header` 和 `Menu` 元件，讓它們使用我們全新的購物車系統。
+
+**A. 改造 `Header.jsx`**
+
+```jsx
+// src/components/layout/Header.jsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+import UserMenu from './UserMenu';
+import useCart from '../../hooks/useCart'; // 1. 匯入 useCart
+
+const Header = () => {
+  const { cartCount } = useCart(); // 2. 一行程式碼取得購物車數量！
+
+  return (
+    <header className="navbar ...">
+      {/* ... */}
+      <div className="navbar-end">
+        <Link to="/cart" className="btn btn-ghost btn-circle">
+          <div className="indicator">
+            {/* ... svg 圖示 ... */}
+            {/* 3. 使用真實的 cartCount */}
+            {cartCount > 0 && (
+              <span className="badge badge-sm indicator-item badge-primary">
+                {cartCount}
+              </span>
+            )}
+          </div>
+        </Link>
+        <UserMenu />
+      </div>
+    </header>
+  );
+};
+
+export default Header;
+```
+
+**B. 改造 `Menu.jsx`**
+
+```jsx
+// src/pages/Menu.jsx
+import React from 'react';
+import useMenu from '../hooks/useMenu';
+import { formatCurrency } from '../utils/helpers';
+import { useUser } from '@clerk/clerk-react';
+import useCart from '../hooks/useCart'; // 1. 匯入 useCart
+
+const Menu = () => {
+  const { menuItems, isLoading, error } = useMenu();
+  const { isSignedIn } = useUser();
+  const { addToCart } = useCart(); // 2. 取得 addToCart 函式！
+
+  // ... 載入和錯誤處理 ...
+
+  const handleAddToCart = (item) => {
+    addToCart(item);
+    // 你可以在這裡加入一個提示，例如 "已加入購物車！"
+    console.log(`${item.name} 已加入購物車`);
+  };
+
+  return (
+    <div className="space-y-12">
+      {/* ... */}
+      <div className="grid ...">
+        {menuItems.map((item) => (
+          <div key={item.id} className="card ...">
+            {/* ... */}
+            <div className="card-actions justify-end">
+              <button
+                className="btn btn-primary"
+                disabled={!isSignedIn}
+                onClick={() => handleAddToCart(item)} // 3. 呼叫 handleAddToCart
+              >
+                {isSignedIn ? "加入購物車" : "請先登入"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default Menu;
+```
+
+---
+
+**動手試試看！**
+
+現在，請確保你處於登入狀態，然後去「美味菜單」頁面點擊幾個「加入購物車」按鈕。你會神奇地發現：
+1.  你點擊按鈕時，`console` 中會印出成功加入的訊息。
+2.  右上角的購物車圖示上的數字會即時更新！
+
+我們成功了！我們建立了一個全域的、解耦的、易於使用的狀態管理系統，而沒有寫一行 Props Drilling 的程式碼。
+
+> **關於後端整合**：
+> 目前的 `CartProvider` 只是將資料儲存在記憶體中，重新整理頁面後購物車就會被清空。在真實的專案中，`addToCart` 等函式內部會呼叫 `fetch` API，將購物車資料儲存到後端資料庫中，並與使用者 ID 關聯。這將是我們後續章節會探討的進階主題。
+
+在下一個章節，我們將會**打造 `/cart` 頁面**，讓使用者可以看到他們購物車中的所有商品，並能進行修改或刪除。
+</file>
+
+<file path="docs/06_Building_the_Cart_Page.md">
+# 早餐時光實戰手冊 (六)：打造購物車頁面
+
+在上一章，我們成功地建立了一個可以跨元件運作的購物車狀態管理系統。我們可以將商品加入購物車，並在導覽列即時看到數量變化。現在，我們需要一個專屬的頁面，讓使用者可以清楚地看到他們選了些什麼，並對其進行管理。
+
+本章的目標就是：**打造一個功能完整的 `/cart` 頁面**。
+
+我們將會：
+1.  顯示購物車中的所有商品。
+2.  實作增加、減少商品數量，以及刪除單一商品的功能。
+3.  計算並顯示購物車的總金額。
+
+---
+
+## 1. 擴充我們的 `CartProvider`
+
+為了實現上述功能，我們需要先回到 `CartProvider`，為它加入一些新的「能力」。我們需要新增「更新商品數量」的函式，並讓它能計算購物車的「總金額」。
+
+**完全替換 `src/contexts/CartProvider.jsx` 的內容**，注意看我們新增和修改了哪些地方：
+
+```jsx
+// src/contexts/CartProvider.jsx
+import React, { useState, useMemo, useCallback } from 'react';
+import CartContext from './cartContext';
+
+export function CartProvider({ children }) {
+  const [cartItems, setCartItems] = useState([]);
+
+  // 更新商品數量的函式 (這是新的！)
+  const updateQuantity = useCallback((itemId, newQuantity) => {
+    const quantity = Math.max(0, newQuantity); // 確保數量不會是負數
+    
+    setCartItems(prevItems => {
+      if (quantity === 0) {
+        // 如果數量為 0，則從購物車中移除該商品
+        return prevItems.filter(item => item.id !== itemId);
+      }
+      return prevItems.map(item =>
+        item.id === itemId ? { ...item, quantity } : item
+      );
+    });
+  }, []);
+
+  // 加入購物車的函式 (現在它會使用 updateQuantity)
+  const addToCart = useCallback((menuItem) => {
+    setCartItems(prevItems => {
+      const existingItem = prevItems.find(item => item.id === menuItem.id);
+      if (existingItem) {
+        // 如果已存在，呼叫 updateQuantity 來增加數量
+        updateQuantity(menuItem.id, existingItem.quantity + 1);
+        return prevItems; // 因為 updateQuantity 會觸發狀態更新，這裡回傳原狀態即可
+      } else {
+        // 如果是新商品，加入陣列，數量設為 1
+        return [...prevItems, { ...menuItem, quantity: 1 }];
+      }
+    });
+    // Manually trigger update for existing items
+    const existingItem = cartItems.find(item => item.id === menuItem.id);
+    if(existingItem) {
+       updateQuantity(menuItem.id, existingItem.quantity + 1);
+    }
+  }, [cartItems, updateQuantity]);
+
+  // 移除商品的函式 (現在它只是 updateQuantity 的一個簡化版)
+  const removeFromCart = useCallback((itemId) => {
+    updateQuantity(itemId, 0);
+  }, [updateQuantity]);
+
+  // 計算購物車商品總數
+  const cartCount = useMemo(() => {
+    return cartItems.reduce((total, item) => total + item.quantity, 0);
+  }, [cartItems]);
+
+  // 計算購物車總金額 (這是新的！)
+  const totalAmount = useMemo(() => {
+    return cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
+  }, [cartItems]);
+
+  // 我們要提供給所有子元件的「值」 (加入了新成員)
+  const value = useMemo(() => ({
+    cartItems,
+    cartCount,
+    totalAmount, // 新增
+    addToCart,
+    removeFromCart,
+    updateQuantity, // 新增
+  }), [cartItems, cartCount, totalAmount, addToCart, removeFromCart, updateQuantity]);
+
+  return (
+    <CartContext.Provider value={value}>
+      {children}
+    </CartContext.Provider>
+  );
+}
+```
+
+**主要變更：**
+1.  **`updateQuantity` 函式**：這是一個更通用的函式，可以將指定商品的數量設定為任何數字。如果數字為 0，它會自動將商品移除。
+2.  **`removeFromCart`**：現在變成 `updateQuantity(itemId, 0)` 的一個快捷方式，讓程式碼更簡潔。
+3.  **`addToCart`**：也稍微修改以利用 `updateQuantity`。
+4.  **`totalAmount`**：使用 `useMemo` 計算購物車所有商品的總價。
+5.  **`value` 物件**：將 `totalAmount` 和 `updateQuantity` 也加入到廣播出去的 `value` 中，這樣我們的頁面元件才能使用它們。
+
+---
+
+## 2. 打造購物車頁面 (`Cart.jsx`)
+
+現在 `CartProvider` 已經具備了所有我們需要的功能，讓我們來建構 `Cart.jsx` 頁面。
+
+**完全替換 `src/pages/Cart.jsx` 的內容：**
+
+```jsx
+// src/pages/Cart.jsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+import useCart from '../hooks/useCart';
+import { formatCurrency } from '../utils/helpers';
+
+const CartPage = () => {
+  // 從 useCart Hook 中取得所有我們需要的狀態和函式
+  const { cartItems, cartCount, totalAmount, updateQuantity, removeFromCart } = useCart();
+
+  // 狀況一：購物車是空的
+  if (cartCount === 0) {
+    return (
+      <div className="text-center py-20">
+        <h1 className="text-3xl font-bold mb-4">你的購物車是空的</h1>
+        <p className="mb-6">快去看看我們的美味菜單，把喜歡的都加進來！</p>
+        <Link to="/menu" className="btn btn-primary">
+          前往菜單
+        </Link>
+      </div>
+    );
+  }
+
+  // 狀況二：購物車有商品
+  return (
+    <div>
+      <h1 className="text-3xl font-bold mb-6">我的購物車</h1>
+      
+      {/* 商品列表 */}
+      <div className="overflow-x-auto">
+        <table className="table w-full">
+          <thead>
+            <tr>
+              <th>商品</th>
+              <th>單價</th>
+              <th>數量</th>
+              <th>小計</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cartItems.map(item => (
+              <tr key={item.id}>
+                <td>
+                  <div className="flex items-center space-x-3">
+                    <div className="avatar">
+                      <div className="mask mask-squircle w-12 h-12">
+                        <img src={item.image} alt={item.name} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="font-bold">{item.name}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>{formatCurrency(item.price)}</td>
+                <td>
+                  <div className="flex items-center space-x-2">
+                    <button 
+                      className="btn btn-xs"
+                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                    >
+                      -
+                    </button>
+                    <span>{item.quantity}</span>
+                    <button 
+                      className="btn btn-xs"
+                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                    >
+                      +
+                    </button>
+                  </div>
+                </td>
+                <td>{formatCurrency(item.price * item.quantity)}</td>
+                <td>
+                  <button 
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => removeFromCart(item.id)}
+                  >
+                    移除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 總計與結帳 */}
+      <div className="mt-8 flex justify-end">
+        <div className="card w-96 bg-base-200 shadow-xl">
+          <div className="card-body">
+            <h2 className="card-title">訂單摘要</h2>
+            <div className="flex justify-between">
+              <span>商品總數</span>
+              <span>{cartCount}</span>
+            </div>
+            <div className="flex justify-between font-bold text-lg">
+              <span>總金額</span>
+              <span>{formatCurrency(totalAmount)}</span>
+            </div>
+            <div className="card-actions justify-end mt-4">
+              <button className="btn btn-primary w-full">
+                前往結帳
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CartPage;
+```
+
+**程式碼講解：**
+1.  **獲取 Context 資料**：我們在第一行就使用 `useCart()` 取得了所有需要的狀態 (`cartItems`, `cartCount`, `totalAmount`) 和函式 (`updateQuantity`, `removeFromCart`)。
+2.  **空購物車畫面**：我們判斷 `cartCount` 是否為 0，如果是，就顯示一個友善的提示訊息。
+3.  **商品列表**：如果購物車不為空，我們就 `map` `cartItems` 陣列，為每個商品渲染一個表格列 `<tr>`。
+4.  **互動按鈕**：
+    *   `+` 和 `-` 按鈕直接呼叫 `updateQuantity` 來更新商品數量。
+    *   「移除」按鈕則呼叫 `removeFromCart`。
+5.  **訂單摘要**：在頁面右下角，我們顯示了商品總數和格式化後的總金額，並提供一個（目前尚無功能的）「前往結帳」按鈕。
+
+---
+
+**動手玩玩看！**
+
+現在，你的購物車頁面已經完全「活」了起來：
+1.  去菜單頁面加入幾個不同的商品。
+2.  點擊右上角的購物車圖示，或直接在網址列輸入 `/cart` 進入購物車頁面。
+3.  試著點擊 `+`、`-` 和「移除」按鈕，看看商品列表和右下角的訂單摘要是否都如預期般即時更新。
+
+我們已經建立了一個功能齊全的前端購物車體驗！
+
+不過，它還有一個小小的「缺陷」：只要你重新整理瀏覽器，購物車裡的所有東西都會消失。這是因為我們目前的狀態只存在於瀏覽器的記憶體中。
+
+在下一個章節，我們將解決這個問題，學習**如何將購物車的狀態與後端 API 同步**，讓它能夠被永久保存。
+</file>
+
+<file path="docs/07_Persisting_Cart_with_API.md">
+# 早餐時光實戰手冊 (七)：與 API 同步，保存購物車
+
+我們已經建立了一個很棒的購物車，但它有個「健忘」的毛病——只要重新整理頁面，一切都將煙消雲散。這是因為我們的狀態目前只存在於瀏覽器的記憶體中。
+
+在本章，我們將徹底解決這個問題。我們將把購物車的狀態儲存到我們的 `json-server` 模擬後端中，並將它與當前登入的使用者綁定。這樣，無論使用者何時回來，他們的購物車都會靜靜地在那裡等待。
+
+---
+
+## 1. 建立 API 服務層
+
+為了保持 `CartProvider` 的程式碼清晰，一個好的實踐是將所有 `fetch` 網路請求的邏輯，抽象到一個專門的「服務層」(Service Layer) 檔案中。
+
+在 `src/` 目錄下建立一個新資料夾 `services`，並在其中建立 `api.js` 檔案。
+
+`src/services/api.js`
+```javascript
+const API_BASE_URL = 'http://localhost:3301';
+
+// 輔助函式，用於處理 fetch 回應
+async function handleResponse(response) {
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: '發生未知錯誤' }));
+    throw new Error(error.message || '請求失敗');
+  }
+  return response.json();
+}
+
+// 獲取某個使用者的購物車
+export async function fetchCart(userId) {
+  if (!userId) return [];
+  const response = await fetch(`${API_BASE_URL}/cart?userId=${userId}`);
+  return handleResponse(response);
+}
+
+// 根據菜單 ID 查詢購物車中是否已有該商品
+export async function findCartItemByMenuId(menuItemId, userId) {
+  if (!userId) return null;
+  const response = await fetch(`${API_BADE_URL}/cart?userId=${userId}&menuItemId=${menuItemId}`);
+  const items = await handleResponse(response);
+  return items[0] || null;
+}
+
+// 新增一個商品到購物車
+export async function addCartItem(item) {
+  const response = await fetch(`${API_BASE_URL}/cart`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(item),
+  });
+  return handleResponse(response);
+}
+
+// 更新購物車中的商品 (例如更新數量)
+export async function updateCartItem(itemId, updatedFields) {
+  const response = await fetch(`${API_BASE_URL}/cart/${itemId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updatedFields),
+  });
+  return handleResponse(response);
+}
+
+// 從購物車中刪除一個商品
+export async function removeCartItem(itemId) {
+  const response = await fetch(`${API_BASE_URL}/cart/${itemId}`, {
+    method: 'DELETE',
+  });
+  return handleResponse(response);
+}
+```
+
+**程式碼講解：**
+*   我們將所有與 `/cart` 端點相關的 CRUD (Create, Read, Update, Delete) 操作都封裝成了獨立的、可重用的 `async` 函式。
+*   `handleResponse` 是一個輔助函式，用於統一處理錯誤情況。
+*   注意 `fetchCart` 和 `findCartItemByMenuId` 都需要 `userId`，這是實現「使用者專屬購物車」的關鍵。
+
+---
+
+## 2. 全面升級 `CartProvider`
+
+現在，我們要對 `CartProvider` 進行一次大手術，將它從一個同步的、基於記憶體的管理者，升級為一個非同步的、與後端連動的指揮中心。
+
+**完全替換 `src/contexts/CartProvider.jsx` 的內容：**
+
+```jsx
+// src/contexts/CartProvider.jsx
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { useUser } from '@clerk/clerk-react';
+import CartContext from './cartContext';
+import * as api from '../services/api'; // 1. 引入我們的 API 服務
+
+export function CartProvider({ children }) {
+  const [cartItems, setCartItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true); // 全域載入狀態
+  const [error, setError] = useState(null);
+  
+  const { user, isLoaded: isUserLoaded } = useUser(); // 2. 取得 Clerk 的使用者物件
+  const userId = user?.id;
+
+  // 3. 當使用者狀態載入完成或使用者 ID 改變時，從後端獲取購物車
+  useEffect(() => {
+    if (!isUserLoaded) return; // 等待 Clerk 初始化完成
+
+    if (!userId) {
+      // 如果使用者登出，清空購物車
+      setCartItems([]);
+      setIsLoading(false);
+      return;
+    }
+
+    const loadCart = async () => {
+      setIsLoading(true);
+      try {
+        const items = await api.fetchCart(userId);
+        setCartItems(items);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadCart();
+  }, [userId, isUserLoaded]);
+
+  // 重新獲取購物車的輔助函式
+  const refreshCart = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const items = await api.fetchCart(userId);
+      setCartItems(items);
+    } catch (err) {
+      console.error("刷新購物車失敗:", err);
+    }
+  }, [userId]);
+
+  // 4. 改造 addToCart 為 async 函式
+  const addToCart = useCallback(async (menuItem) => {
+    if (!userId) throw new Error("請先登入");
+
+    try {
+      const existingItem = await api.findCartItemByMenuId(menuItem.id, userId);
+      
+      if (existingItem) {
+        // 如果已存在，更新數量 (PATCH)
+        await api.updateCartItem(existingItem.id, {
+          quantity: existingItem.quantity + 1
+        });
+      } else {
+        // 如果不存在，新增一筆 (POST)
+        await api.addCartItem({
+          ...menuItem,
+          menuItemId: menuItem.id, // 確保有關聯 ID
+          id: undefined, // 讓 json-server 自動產生 id
+          userId: userId,
+          quantity: 1,
+        });
+      }
+      await refreshCart(); // 操作成功後，重新獲取整個購物車以同步狀態
+    } catch (err) {
+      setError(err.message);
+      throw err; // 將錯誤向上拋出，讓 UI 層可以捕捉到
+    }
+  }, [userId, refreshCart]);
+  
+  // 5. 改造 updateQuantity 和 removeFromCart
+  const updateQuantity = useCallback(async (itemId, newQuantity) => {
+    const quantity = Math.max(0, newQuantity);
+    if (quantity === 0) {
+      await removeFromCart(itemId);
+    } else {
+      await api.updateCartItem(itemId, { quantity });
+      await refreshCart();
+    }
+  }, [userId, refreshCart]);
+
+  const removeFromCart = useCallback(async (itemId) => {
+    await api.removeCartItem(itemId);
+    await refreshCart();
+  }, [userId, refreshCart]);
+
+
+  const cartCount = useMemo(() => cartItems.reduce((sum, item) => sum + item.quantity, 0), [cartItems]);
+  const totalAmount = useMemo(() => cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0), [cartItems]);
+
+  const value = useMemo(() => ({
+    cartItems,
+    cartCount,
+    totalAmount,
+    isLoading,
+    error,
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+  }), [cartItems, cartCount, totalAmount, isLoading, error, addToCart, removeFromCart, updateQuantity]);
+
+  return (
+    <CartContext.Provider value={value}>
+      {children}
+    </CartContext.Provider>
+  );
+}
+```
+
+**主要變更：**
+1.  **引入 `api.js`**：我們不再直接操作 `cartItems` 陣列。
+2.  **取得 `userId`**：使用 `useUser()` 來識別當前操作的使用者。
+3.  **`useEffect` 初始化**：在元件掛載或使用者變更時，自動從後端載入屬於該使用者的購物車。
+4.  **非同步改造**：`addToCart` 等函式現在都是 `async`，它們會先呼叫 `api.js` 中的服務，操作成功後再呼叫 `refreshCart` 來同步前端的狀態，確保資料一致性。
+5.  **錯誤處理**：`addToCart` 會將 API 錯誤向上拋出，這樣呼叫它的元件（例如 `Menu.jsx`）就能夠捕捉到並給予使用者提示。
+
+---
+
+## 3. 升級 `Menu.jsx` 以處理非同步操作
+
+我們的 `CartProvider` 已經變成了非同步，現在我們需要更新 `Menu.jsx` 來適應這個變化。我們需要處理按鈕的載入狀態，並捕捉可能發生的錯誤。
+
+**修改 `src/pages/Menu.jsx`:**
+
+```jsx
+// src/pages/Menu.jsx
+import React, { useState } from 'react'; // 引入 useState
+import useMenu from '../hooks/useMenu';
+import { formatCurrency } from '../utils/helpers';
+import { useUser } from '@clerk/clerk-react';
+import useCart from '../hooks/useCart';
+
+const Menu = () => {
+  const { menuItems, isLoading: isMenuLoading, error: menuError } = useMenu();
+  const { isSignedIn } = useUser();
+  const { addToCart } = useCart();
+  
+  // 新增兩個 state 來處理 UI 反饋
+  const [isAdding, setIsAdding] = useState(null); // 追蹤哪個商品正在被加入
+  const [feedback, setFeedback] = useState(null); // 顯示成功或失敗訊息
+
+  // ...
+  const handleAddToCart = async (item) => {
+    if (isAdding) return; // 防止重複點擊
+
+    setIsAdding(item.id);
+    setFeedback(null);
+    try {
+      await addToCart(item);
+      setFeedback({ type: 'success', message: `${item.name} 已加入購物車！` });
+    } catch (err) {
+      setFeedback({ type: 'error', message: err.message || '加入失敗，請稍後再試' });
+    } finally {
+      setIsAdding(null);
+      // 設定一個計時器，幾秒後自動隱藏提示訊息
+      setTimeout(() => setFeedback(null), 3000);
+    }
+  };
+
+  // ... 載入和錯誤處理 ...
+
+  return (
+    <div className="space-y-12">
+      {/* 增加一個顯示提示訊息的區塊 */}
+      {feedback && (
+        <div className={`alert ${feedback.type === 'error' ? 'alert-error' : 'alert-success'}`}>
+          <span>{feedback.message}</span>
+        </div>
+      )}
+
+      {/* ... */}
+      <div className="card-actions justify-end">
+        <button
+          className="btn btn-primary"
+          disabled={!isSignedIn || isAdding === item.id}
+          onClick={() => handleAddToCart(item)}
+        >
+          {isAdding === item.id ? (
+            <span className="loading loading-spinner"></span>
+          ) : isSignedIn ? (
+            "加入購物車"
+          ) : (
+            "請先登入"
+          )}
+        </button>
+      </div>
+      {/* ... */}
+    </div>
+  );
+};
+
+export default Menu;
+
+```
+*請注意，你需要將上述程式碼片段整合到你現有的 `Menu.jsx` 中，主要是 `handleAddToCart` 函式和 `button` 的部分。*
+
+**主要變更：**
+*   `handleAddToCart` 現在是一個 `async` 函式，並用 `try...catch` 包裹了對 `addToCart` 的呼叫。
+*   我們新增了 `isAdding` 狀態，在 API 請求期間禁用按鈕並顯示載入中動畫，防止使用者重複點擊。
+*   我們新增了 `feedback` 狀態，在操作完成後給予使用者明確的成功或失敗提示。
+
+---
+
+**驗收成果！**
+
+這是關鍵時刻。請執行以下步驟：
+1.  確保你的 `npm run dev` 和 `npm run mock-api` 都在運行。
+2.  登入你的帳號。
+3.  在菜單頁面加入幾個商品。
+4.  **重新整理你的瀏覽器！**
+5.  回到購物車頁面 (`/cart`)。
+
+如果一切順利，你會發現... 購物車裡的商品都還在！它們已經被成功地儲存到了 `json-server/db.json` 檔案中，並與你的 `userId` 關聯。你可以試著登出，然後用另一個帳號登入，你會發現那是一個全新的、空的購物車。
+
+我們已經完成了一個真正意義上持久化的購物車系統。
+
+在最後的章節中，我們將完成「**結帳**」的流程，並為我們的專案做最後的潤飾和總結。
+</file>
+
+<file path="docs/08_Checkout_and_Final_Touches.md">
+# 早餐時光實戰手冊 (八)：結帳流程與專案總結
+
+歡迎來到我們實戰手冊的最終章！你已經走過了一段漫長的旅程，從一個空無一物的資料夾，到現在一個功能豐富、接近真實的動態網站。在本章，我們將完成最後一塊拼圖：**結帳流程**。
+
+當使用者心滿意足地選完所有商品後，我們需要提供一個「結帳」的按鈕，將他們的購物車「轉換」成一張訂單，並清空購物車，以便他們開始下一次的購物。
+
+---
+
+## 1. 後端與 API 準備
+
+首先，我們需要讓後端 `json-server` 能夠接收和儲存「訂單」資料。
+
+**A. 更新 `db.json`**
+
+打開 `json-server/db.json` 檔案，在最外層的 JSON 物件中，加入一個空的 `orders` 陣列。
+
+`json-server/db.json`
+```json
+{
+  "menu": [
+    // ... menu data ...
+  ],
+  "orders": [] // <--- 在這裡加入這行
+}
+```
+`json-server` 會自動偵測到這個變動，並為我們建立一個 `http://localhost:3301/orders` 的 API 端點，我們可以對它進行 `GET` 和 `POST` 操作。
+
+**B. 在 `api.js` 中新增 `createOrder` 函式**
+
+打開 `src/services/api.js`，在檔案底部加入以下函式，用來將訂單資料傳送到後端。
+
+`src/services/api.js`
+```javascript
+// ... 其他 api 函式 ...
+
+// 建立一筆新訂單
+export async function createOrder(order) {
+  const response = await fetch(`${API_BASE_URL}/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(order),
+  });
+  return handleResponse(response);
+}
+```
+
+---
+
+## 2. 最終升級：`CartProvider` 的結帳與清空邏輯
+
+現在，讓我們為 `CartProvider` 加入最後兩個關鍵能力：`checkout` 和 `clearCart`。
+
+**修改 `src/contexts/CartProvider.jsx`**，加入 `checkout` 和 `clearCart` 函式，並將它們提供出去。
+
+```jsx
+// src/contexts/CartProvider.jsx
+// ... (保留頂部的 import 和現有函式)
+
+export function CartProvider({ children }) {
+  // ... (保留現有的 useState, useUser, useEffect, refreshCart, addToCart, updateQuantity, removeFromCart)
+
+  // 新增：清空購物車函式
+  const clearCart = useCallback(async () => {
+    if (!userId) return;
+    try {
+      // 獲取當前使用者的所有購物車項目
+      const userCartItems = await api.fetchCart(userId);
+      // 遍歷並刪除每一項
+      for (const item of userCartItems) {
+        await api.removeCartItem(item.id);
+      }
+      await refreshCart(); // 重新整理前端狀態
+    } catch (err) {
+      console.error("清空購物車失敗:", err);
+      setError(err.message);
+    }
+  }, [userId, refreshCart]);
+  
+  // 新增：結帳函式
+  const checkout = useCallback(async () => {
+    if (!userId || cartItems.length === 0) {
+      throw new Error("購物車是空的或使用者未登入");
+    }
+    
+    // 1. 建立訂單 payload
+    const orderPayload = {
+      userId,
+      items: cartItems.map(item => ({
+        menuItemId: item.menuItemId,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+      })),
+      totalAmount,
+      status: 'pending', // 訂單狀態，例如 'pending', 'completed'
+      createdAt: new Date().toISOString(),
+    };
+    
+    try {
+      // 2. 呼叫 API 建立訂單
+      await api.createOrder(orderPayload);
+      
+      // 3. 訂單建立成功後，清空購物車
+      await clearCart();
+      
+    } catch (err) {
+      console.error("結帳失敗:", err);
+      setError(err.message);
+      throw err; // 將錯誤拋出，讓 UI 層處理
+    }
+    
+  }, [userId, cartItems, totalAmount, clearCart]);
+
+  // ... (保留 cartCount 和 totalAmount 的 useMemo)
+
+  // 將新函式加入到 value 中
+  const value = useMemo(() => ({
+    // ... (保留現有的值)
+    checkout, // 新增
+    clearCart, // 新增
+  }), [/* ... 更新依賴 ... */, checkout, clearCart]);
+  
+  return (
+    <CartContext.Provider value={value}>
+      {children}
+    </CartContext.Provider>
+  );
+}
+```
+*請注意：你需要將 `checkout` 和 `clearCart` 函式以及更新後的 `value` 物件，整合到你現有的 `CartProvider.jsx` 中。*
+
+---
+
+## 3. 在購物車頁面觸發結帳
+
+萬事俱備，只差臨門一腳。讓我們回到 `Cart.jsx`，讓「前往結帳」按鈕真正地動起來。
+
+**修改 `src/pages/Cart.jsx`:**
+
+```jsx
+// src/pages/Cart.jsx
+import React, { useState } from 'react'; // 引入 useState
+import { Link, useNavigate } from 'react-router-dom'; // 引入 useNavigate
+import useCart from '../hooks/useCart';
+import { formatCurrency } from '../utils/helpers';
+
+const CartPage = () => {
+  // 1. 從 Hook 中取得 checkout 函式
+  const { cartItems, cartCount, totalAmount, updateQuantity, removeFromCart, checkout } = useCart();
+  const navigate = useNavigate(); // 用於頁面跳轉
+  
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [error, setError] = useState(null);
+
+  // 2. 建立結帳處理函式
+  const handleCheckout = async () => {
+    setIsCheckingOut(true);
+    setError(null);
+    try {
+      await checkout();
+      // 結帳成功後，可以跳轉到一個感謝頁面或訂單頁
+      alert("下單成功！感謝您的購買！");
+      navigate('/'); // 跳轉回首頁
+    } catch (err) {
+      setError(err.message || "結帳過程中發生錯誤，請稍後再試。");
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
+
+  // ... (保留空購物車的 JSX)
+
+  return (
+    <div>
+      {/* ... (保留商品列表的 JSX) ... */}
+
+      {/* 顯示錯誤訊息 */}
+      {error && <div className="alert alert-error mt-4"><span>{error}</span></div>}
+
+      {/* 總計與結帳 */}
+      <div className="mt-8 flex justify-end">
+        <div className="card w-96 bg-base-200 shadow-xl">
+          <div className="card-body">
+            {/* ... */}
+            <div className="card-actions justify-end mt-4">
+              {/* 3. 綁定事件並處理載入中狀態 */}
+              <button 
+                className="btn btn-primary w-full"
+                onClick={handleCheckout}
+                disabled={isCheckingOut}
+              >
+                {isCheckingOut ? <span className="loading loading-spinner"></span> : "前往結帳"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CartPage;
+```
+**主要變更：**
+1.  從 `useCart` 中取得了 `checkout` 函式。
+2.  建立了一個 `handleCheckout` 函式，它會呼叫 `checkout` 並處理載入中和錯誤狀態。
+3.  當結帳成功時，我們用一個簡單的 `alert` 提示使用者，並使用 `useNavigate` 這個 Hook 將使用者導回首頁。
+
+---
+
+## 4. 專案總結與回顧
+
+**恭喜你！你已經完成了整個「早餐時光」專案的開發！**
+
+讓我們一起回顧這趟旅程：
+1.  **專案初始化**：我們使用 Vite 建立了專案，並整合了 Tailwind CSS 和 DaisyUI 來打造美觀的 UI。
+2.  **佈局與路由**：我們使用 React Router 建立了網站的骨架，實現了單頁應用的導航。
+3.  **模擬後端**：我們使用 `json-server` 快速建立了一個 REST API，實現了前後端分離的開發模式。
+4.  **動態資料**：我們建立了自訂 Hook `useMenu`，從後端獲取菜單資料並動態渲染到頁面上。
+5.  **使用者驗證**：我們整合了 Clerk，輕鬆地為應用程式加上了完整、安全的註冊和登入功能。
+6.  **全域狀態管理**：我們學習並實作了 React Context API，建立了一個強大且解耦的購物車狀態管理系統。
+7.  **API 同步**：我們將購物車狀態與後端 API 同步，實現了資料的持久化儲存。
+8.  **結帳流程**：我們完成了最後的結帳功能，將購物車轉換為訂單。
+
+你現在所掌握的，已經是一套足以應對真實世界中、中型複雜度 React 專案的完整技術棧。
+
+## 接下來呢？
+
+一個專案的完成，往往是另一個學習旅程的開始。如果你還意猶未盡，這裡有一些可以挑戰的方向：
+*   **建立「我的訂單」頁面**：在 `api.js` 中新增 `fetchOrders(userId)` 函式，並建立一個新頁面 `/orders` 來顯示使用者的歷史訂單。
+*   **樂觀更新 (Optimistic Updates)**：當使用者點擊「加入購物車」時，不等 API 回應，UI 就立刻更新。這會讓使用者體驗更加流暢。原始的專案程式碼中使用了 `useOptimistic` Hook，你可以試著研究它。
+*   **更詳細的錯誤處理**：為不同的錯誤顯示更具體的提示訊息。
+*   **後端深化**：嘗試用 Node.js + Express 或其他後端框架，來取代 `json-server`，建立一個真正的後端。
+
+希望這份實戰手冊對你有所幫助。不斷練習、不斷探索，你將會在前端開發的道路上越走越遠。祝你編碼愉快！
+</file>
+
+<file path="front/.gitignore">
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+</file>
+
+<file path="front/eslint.config.js">
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import { defineConfig, globalIgnores } from 'eslint/config'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{js,jsx}'],
+    extends: [
+      js.configs.recommended,
+      reactHooks.configs.flat.recommended,
+      reactRefresh.configs.vite,
+    ],
+    languageOptions: {
+      globals: globals.browser,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+  },
+])
+</file>
+
+<file path="front/index.html">
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>front</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+</file>
+
+<file path="front/package.json">
+{
+  "name": "front",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "vite": "^8.0.12"
+  }
+}
+</file>
+
+<file path="front/public/favicon.svg">
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="46" fill="none" viewBox="0 0 48 46"><path fill="#863bff" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" style="fill:#863bff;fill:color(display-p3 .5252 .23 1);fill-opacity:1"/><mask id="a" width="48" height="46" x="0" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M25.842 44.938c-.664.844-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.183c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.498 0-3.579-1.842-3.579H1.133c-.92 0-1.456-1.04-.92-1.787L9.91.473c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.578 1.842 3.578h11.377c.943 0 1.473 1.088.89 1.832L25.843 44.94z" style="fill:#000;fill-opacity:1"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#ede6ff" rx="5.508" ry="14.704" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -4.47 31.516)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#ede6ff" rx="10.399" ry="29.851" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -39.328 7.883)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#7e14ff" rx="5.508" ry="30.487" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -25.913 -14.639)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -32.644 -3.334)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -34.34 30.47)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#ede6ff" rx="14.072" ry="22.078" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="rotate(93.35 24.506 48.493)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx=".387" cy="8.972" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(39.51 .387 8.972)"/></g><g filter="url(#k)"><ellipse cx="47.523" cy="-6.092" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 47.523 -6.092)"/></g><g filter="url(#l)"><ellipse cx="41.412" cy="6.333" fill="#47bfff" rx="5.971" ry="9.665" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 41.412 6.333)"/></g><g filter="url(#m)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#n)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#o)"><ellipse cx="35.651" cy="29.907" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 35.651 29.907)"/></g><g filter="url(#p)"><ellipse cx="38.418" cy="32.4" fill="#47bfff" rx="5.971" ry="15.297" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 38.418 32.4)"/></g></g><defs><filter id="b" width="60.045" height="41.654" x="-19.77" y="16.149" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-54.613" y="-7.533" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-49.64" y="2.03" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-45.045" y="20.029" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-43.513" y="21.178" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="15.756" y="-17.901" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-27.636" y="-22.853" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="20.116" y="-38.415" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="24.641" y="-11.323" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="8.244" y="-2.416" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="18.713" y="10.588" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter></defs></svg>
+</file>
+
+<file path="front/public/icons.svg">
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="bluesky-icon" viewBox="0 0 16 17">
+    <g clip-path="url(#bluesky-clip)"><path fill="#08060d" d="M7.75 7.735c-.693-1.348-2.58-3.86-4.334-5.097-1.68-1.187-2.32-.981-2.74-.79C.188 2.065.1 2.812.1 3.251s.241 3.602.398 4.13c.52 1.744 2.367 2.333 4.07 2.145-2.495.37-4.71 1.278-1.805 4.512 3.196 3.309 4.38-.71 4.987-2.746.608 2.036 1.307 5.91 4.93 2.746 2.72-2.746.747-4.143-1.747-4.512 1.702.189 3.55-.4 4.07-2.145.156-.528.397-3.691.397-4.13s-.088-1.186-.575-1.406c-.42-.19-1.06-.395-2.741.79-1.755 1.24-3.64 3.752-4.334 5.099"/></g>
+    <defs><clipPath id="bluesky-clip"><path fill="#fff" d="M.1.85h15.3v15.3H.1z"/></clipPath></defs>
+  </symbol>
+  <symbol id="discord-icon" viewBox="0 0 20 19">
+    <path fill="#08060d" d="M16.224 3.768a14.5 14.5 0 0 0-3.67-1.153c-.158.286-.343.67-.47.976a13.5 13.5 0 0 0-4.067 0c-.128-.306-.317-.69-.476-.976A14.4 14.4 0 0 0 3.868 3.77C1.546 7.28.916 10.703 1.231 14.077a14.7 14.7 0 0 0 4.5 2.306q.545-.748.965-1.587a9.5 9.5 0 0 1-1.518-.74q.191-.14.372-.293c2.927 1.369 6.107 1.369 8.999 0q.183.152.372.294-.723.437-1.52.74.418.838.963 1.588a14.6 14.6 0 0 0 4.504-2.308c.37-3.911-.63-7.302-2.644-10.309m-9.13 8.234c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.894 0 1.614.82 1.599 1.82.001 1-.705 1.82-1.6 1.82m5.91 0c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.893 0 1.614.82 1.599 1.82 0 1-.706 1.82-1.6 1.82"/>
+  </symbol>
+  <symbol id="documentation-icon" viewBox="0 0 21 20">
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="m15.5 13.333 1.533 1.322c.645.555.967.833.967 1.178s-.322.623-.967 1.179L15.5 18.333m-3.333-5-1.534 1.322c-.644.555-.966.833-.966 1.178s.322.623.966 1.179l1.534 1.321"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M17.167 10.836v-4.32c0-1.41 0-2.117-.224-2.68-.359-.906-1.118-1.621-2.08-1.96-.599-.21-1.349-.21-2.848-.21-2.623 0-3.935 0-4.983.369-1.684.591-3.013 1.842-3.641 3.428C3 6.449 3 7.684 3 10.154v2.122c0 2.558 0 3.838.706 4.726q.306.383.713.671c.76.536 1.79.64 3.581.66"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M3 10a2.78 2.78 0 0 1 2.778-2.778c.555 0 1.209.097 1.748-.047.48-.129.854-.503.982-.982.145-.54.048-1.194.048-1.749a2.78 2.78 0 0 1 2.777-2.777"/>
+  </symbol>
+  <symbol id="github-icon" viewBox="0 0 19 19">
+    <path fill="#08060d" fill-rule="evenodd" d="M9.356 1.85C5.05 1.85 1.57 5.356 1.57 9.694a7.84 7.84 0 0 0 5.324 7.44c.387.079.528-.168.528-.376 0-.182-.013-.805-.013-1.454-2.165.467-2.616-.935-2.616-.935-.349-.91-.864-1.143-.864-1.143-.71-.48.051-.48.051-.48.787.051 1.2.805 1.2.805.695 1.194 1.817.857 2.268.649.064-.507.27-.857.49-1.052-1.728-.182-3.545-.857-3.545-3.87 0-.857.31-1.558.8-2.104-.078-.195-.349-1 .077-2.078 0 0 .657-.208 2.14.805a7.5 7.5 0 0 1 1.946-.26c.657 0 1.328.092 1.946.26 1.483-1.013 2.14-.805 2.14-.805.426 1.078.155 1.883.078 2.078.502.546.799 1.247.799 2.104 0 3.013-1.818 3.675-3.558 3.87.284.247.528.714.528 1.454 0 1.052-.012 1.896-.012 2.156 0 .208.142.455.528.377a7.84 7.84 0 0 0 5.324-7.441c.013-4.338-3.48-7.844-7.773-7.844" clip-rule="evenodd"/>
+  </symbol>
+  <symbol id="social-icon" viewBox="0 0 20 20">
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M12.5 6.667a4.167 4.167 0 1 0-8.334 0 4.167 4.167 0 0 0 8.334 0"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M2.5 16.667a5.833 5.833 0 0 1 8.75-5.053m3.837.474.513 1.035c.07.144.257.282.414.309l.93.155c.596.1.736.536.307.965l-.723.73a.64.64 0 0 0-.152.531l.207.903c.164.715-.213.991-.84.618l-.872-.52a.63.63 0 0 0-.577 0l-.872.52c-.624.373-1.003.094-.84-.618l.207-.903a.64.64 0 0 0-.152-.532l-.723-.729c-.426-.43-.289-.864.306-.964l.93-.156a.64.64 0 0 0 .412-.31l.513-1.034c.28-.562.735-.562 1.012 0"/>
+  </symbol>
+  <symbol id="x-icon" viewBox="0 0 19 19">
+    <path fill="#08060d" fill-rule="evenodd" d="M1.893 1.98c.052.072 1.245 1.769 2.653 3.77l2.892 4.114c.183.261.333.48.333.486s-.068.089-.152.183l-.522.593-.765.867-3.597 4.087c-.375.426-.734.834-.798.905a1 1 0 0 0-.118.148c0 .01.236.017.664.017h.663l.729-.83c.4-.457.796-.906.879-.999a692 692 0 0 0 1.794-2.038c.034-.037.301-.34.594-.675l.551-.624.345-.392a7 7 0 0 1 .34-.374c.006 0 .93 1.306 2.052 2.903l2.084 2.965.045.063h2.275c1.87 0 2.273-.003 2.266-.021-.008-.02-1.098-1.572-3.894-5.547-2.013-2.862-2.28-3.246-2.273-3.266.008-.019.282-.332 2.085-2.38l2-2.274 1.567-1.782c.022-.028-.016-.03-.65-.03h-.674l-.3.342a871 871 0 0 1-1.782 2.025c-.067.075-.405.458-.75.852a100 100 0 0 1-.803.91c-.148.172-.299.344-.99 1.127-.304.343-.32.358-.345.327-.015-.019-.904-1.282-1.976-2.808L6.365 1.85H1.8zm1.782.91 8.078 11.294c.772 1.08 1.413 1.973 1.425 1.984.016.017.241.02 1.05.017l1.03-.004-2.694-3.766L7.796 5.75 5.722 2.852l-1.039-.004-1.039-.004z" clip-rule="evenodd"/>
+  </symbol>
+</svg>
+</file>
+
+<file path="front/README.md">
+---
+noteId: "704c4cd0628f11f19aa0d1d0b97ff3fd"
+tags: []
+
+---
+
+# React + Vite
+
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+
+Currently, two official plugins are available:
+
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the ESLint configuration
+
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+</file>
+
+<file path="front/src/App.css">
+.counter {
+  font-size: 16px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 2px solid transparent;
+  transition: border-color 0.3s;
+  margin-bottom: 24px;
+
+  &:hover {
+    border-color: var(--accent-border);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.hero {
+  position: relative;
+
+  .base,
+  .framework,
+  .vite {
+    inset-inline: 0;
+    margin: 0 auto;
+  }
+
+  .base {
+    width: 170px;
+    position: relative;
+    z-index: 0;
+  }
+
+  .framework,
+  .vite {
+    position: absolute;
+  }
+
+  .framework {
+    z-index: 1;
+    top: 34px;
+    height: 28px;
+    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
+      scale(1.4);
+  }
+
+  .vite {
+    z-index: 0;
+    top: 107px;
+    height: 26px;
+    width: auto;
+    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
+      scale(0.8);
+  }
+}
+
+#center {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  place-content: center;
+  place-items: center;
+  flex-grow: 1;
+
+  @media (max-width: 1024px) {
+    padding: 32px 20px 24px;
+    gap: 18px;
+  }
+}
+
+#next-steps {
+  display: flex;
+  border-top: 1px solid var(--border);
+  text-align: left;
+
+  & > div {
+    flex: 1 1 0;
+    padding: 32px;
+    @media (max-width: 1024px) {
+      padding: 24px 20px;
+    }
+  }
+
+  .icon {
+    margin-bottom: 16px;
+    width: 22px;
+    height: 22px;
+  }
+
+  @media (max-width: 1024px) {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+#docs {
+  border-right: 1px solid var(--border);
+
+  @media (max-width: 1024px) {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+#next-steps ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  margin: 32px 0 0;
+
+  .logo {
+    height: 18px;
+  }
+
+  a {
+    color: var(--text-h);
+    font-size: 16px;
+    border-radius: 6px;
+    background: var(--social-bg);
+    display: flex;
+    padding: 6px 12px;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: box-shadow 0.3s;
+
+    &:hover {
+      box-shadow: var(--shadow);
+    }
+    .button-icon {
+      height: 18px;
+      width: 18px;
+    }
+  }
+
+  @media (max-width: 1024px) {
+    margin-top: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+
+    li {
+      flex: 1 1 calc(50% - 8px);
+    }
+
+    a {
+      width: 100%;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+  }
+}
+
+#spacer {
+  height: 88px;
+  border-top: 1px solid var(--border);
+  @media (max-width: 1024px) {
+    height: 48px;
+  }
+}
+
+.ticks {
+  position: relative;
+  width: 100%;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: -4.5px;
+    border: 5px solid transparent;
+  }
+
+  &::before {
+    left: 0;
+    border-left-color: var(--border);
+  }
+  &::after {
+    right: 0;
+    border-right-color: var(--border);
+  }
+}
+</file>
+
+<file path="front/src/App.jsx">
+import { useState } from 'react'
+import reactLogo from './assets/react.svg'
+import viteLogo from './assets/vite.svg'
+import heroImg from './assets/hero.png'
+import './App.css'
+
+function App() {
+  const [count, setCount] = useState(0)
+
+  return (
+    <>
+      <section id="center">
+        <div className="hero">
+          <img src={heroImg} className="base" width="170" height="179" alt="" />
+          <img src={reactLogo} className="framework" alt="React logo" />
+          <img src={viteLogo} className="vite" alt="Vite logo" />
+        </div>
+        <div>
+          <h1>Get started</h1>
+          <p>
+            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
+          </p>
+        </div>
+        <button
+          type="button"
+          className="counter"
+          onClick={() => setCount((count) => count + 1)}
+        >
+          Count is {count}
+        </button>
+      </section>
+
+      <div className="ticks"></div>
+
+      <section id="next-steps">
+        <div id="docs">
+          <svg className="icon" role="presentation" aria-hidden="true">
+            <use href="/icons.svg#documentation-icon"></use>
+          </svg>
+          <h2>Documentation</h2>
+          <p>Your questions, answered</p>
+          <ul>
+            <li>
+              <a href="https://vite.dev/" target="_blank">
+                <img className="logo" src={viteLogo} alt="" />
+                Explore Vite
+              </a>
+            </li>
+            <li>
+              <a href="https://react.dev/" target="_blank">
+                <img className="button-icon" src={reactLogo} alt="" />
+                Learn more
+              </a>
+            </li>
+          </ul>
+        </div>
+        <div id="social">
+          <svg className="icon" role="presentation" aria-hidden="true">
+            <use href="/icons.svg#social-icon"></use>
+          </svg>
+          <h2>Connect with us</h2>
+          <p>Join the Vite community</p>
+          <ul>
+            <li>
+              <a href="https://github.com/vitejs/vite" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#github-icon"></use>
+                </svg>
+                GitHub
+              </a>
+            </li>
+            <li>
+              <a href="https://chat.vite.dev/" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#discord-icon"></use>
+                </svg>
+                Discord
+              </a>
+            </li>
+            <li>
+              <a href="https://x.com/vite_js" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#x-icon"></use>
+                </svg>
+                X.com
+              </a>
+            </li>
+            <li>
+              <a href="https://bsky.app/profile/vite.dev" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#bluesky-icon"></use>
+                </svg>
+                Bluesky
+              </a>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <div className="ticks"></div>
+      <section id="spacer"></section>
+    </>
+  )
+}
+
+export default App
+</file>
+
+<file path="front/src/assets/react.svg">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="35.93" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 228"><path fill="#00D8FF" d="M210.483 73.824a171.49 171.49 0 0 0-8.24-2.597c.465-1.9.893-3.777 1.273-5.621c6.238-30.281 2.16-54.676-11.769-62.708c-13.355-7.7-35.196.329-57.254 19.526a171.23 171.23 0 0 0-6.375 5.848a155.866 155.866 0 0 0-4.241-3.917C100.759 3.829 77.587-4.822 63.673 3.233C50.33 10.957 46.379 33.89 51.995 62.588a170.974 170.974 0 0 0 1.892 8.48c-3.28.932-6.445 1.924-9.474 2.98C17.309 83.498 0 98.307 0 113.668c0 15.865 18.582 31.778 46.812 41.427a145.52 145.52 0 0 0 6.921 2.165a167.467 167.467 0 0 0-2.01 9.138c-5.354 28.2-1.173 50.591 12.134 58.266c13.744 7.926 36.812-.22 59.273-19.855a145.567 145.567 0 0 0 5.342-4.923a168.064 168.064 0 0 0 6.92 6.314c21.758 18.722 43.246 26.282 56.54 18.586c13.731-7.949 18.194-32.003 12.4-61.268a145.016 145.016 0 0 0-1.535-6.842c1.62-.48 3.21-.974 4.76-1.488c29.348-9.723 48.443-25.443 48.443-41.52c0-15.417-17.868-30.326-45.517-39.844Zm-6.365 70.984c-1.4.463-2.836.91-4.3 1.345c-3.24-10.257-7.612-21.163-12.963-32.432c5.106-11 9.31-21.767 12.459-31.957c2.619.758 5.16 1.557 7.61 2.4c23.69 8.156 38.14 20.213 38.14 29.504c0 9.896-15.606 22.743-40.946 31.14Zm-10.514 20.834c2.562 12.94 2.927 24.64 1.23 33.787c-1.524 8.219-4.59 13.698-8.382 15.893c-8.067 4.67-25.32-1.4-43.927-17.412a156.726 156.726 0 0 1-6.437-5.87c7.214-7.889 14.423-17.06 21.459-27.246c12.376-1.098 24.068-2.894 34.671-5.345a134.17 134.17 0 0 1 1.386 6.193ZM87.276 214.515c-7.882 2.783-14.16 2.863-17.955.675c-8.075-4.657-11.432-22.636-6.853-46.752a156.923 156.923 0 0 1 1.869-8.499c10.486 2.32 22.093 3.988 34.498 4.994c7.084 9.967 14.501 19.128 21.976 27.15a134.668 134.668 0 0 1-4.877 4.492c-9.933 8.682-19.886 14.842-28.658 17.94ZM50.35 144.747c-12.483-4.267-22.792-9.812-29.858-15.863c-6.35-5.437-9.555-10.836-9.555-15.216c0-9.322 13.897-21.212 37.076-29.293c2.813-.98 5.757-1.905 8.812-2.773c3.204 10.42 7.406 21.315 12.477 32.332c-5.137 11.18-9.399 22.249-12.634 32.792a134.718 134.718 0 0 1-6.318-1.979Zm12.378-84.26c-4.811-24.587-1.616-43.134 6.425-47.789c8.564-4.958 27.502 2.111 47.463 19.835a144.318 144.318 0 0 1 3.841 3.545c-7.438 7.987-14.787 17.08-21.808 26.988c-12.04 1.116-23.565 2.908-34.161 5.309a160.342 160.342 0 0 1-1.76-7.887Zm110.427 27.268a347.8 347.8 0 0 0-7.785-12.803c8.168 1.033 15.994 2.404 23.343 4.08c-2.206 7.072-4.956 14.465-8.193 22.045a381.151 381.151 0 0 0-7.365-13.322Zm-45.032-43.861c5.044 5.465 10.096 11.566 15.065 18.186a322.04 322.04 0 0 0-30.257-.006c4.974-6.559 10.069-12.652 15.192-18.18ZM82.802 87.83a323.167 323.167 0 0 0-7.227 13.238c-3.184-7.553-5.909-14.98-8.134-22.152c7.304-1.634 15.093-2.97 23.209-3.984a321.524 321.524 0 0 0-7.848 12.897Zm8.081 65.352c-8.385-.936-16.291-2.203-23.593-3.793c2.26-7.3 5.045-14.885 8.298-22.6a321.187 321.187 0 0 0 7.257 13.246c2.594 4.48 5.28 8.868 8.038 13.147Zm37.542 31.03c-5.184-5.592-10.354-11.779-15.403-18.433c4.902.192 9.899.29 14.978.29c5.218 0 10.376-.117 15.453-.343c-4.985 6.774-10.018 12.97-15.028 18.486Zm52.198-57.817c3.422 7.8 6.306 15.345 8.596 22.52c-7.422 1.694-15.436 3.058-23.88 4.071a382.417 382.417 0 0 0 7.859-13.026a347.403 347.403 0 0 0 7.425-13.565Zm-16.898 8.101a358.557 358.557 0 0 1-12.281 19.815a329.4 329.4 0 0 1-23.444.823c-7.967 0-15.716-.248-23.178-.732a310.202 310.202 0 0 1-12.513-19.846h.001a307.41 307.41 0 0 1-10.923-20.627a310.278 310.278 0 0 1 10.89-20.637l-.001.001a307.318 307.318 0 0 1 12.413-19.761c7.613-.576 15.42-.876 23.31-.876H128c7.926 0 15.743.303 23.354.883a329.357 329.357 0 0 1 12.335 19.695a358.489 358.489 0 0 1 11.036 20.54a329.472 329.472 0 0 1-11 20.722Zm22.56-122.124c8.572 4.944 11.906 24.881 6.52 51.026c-.344 1.668-.73 3.367-1.15 5.09c-10.622-2.452-22.155-4.275-34.23-5.408c-7.034-10.017-14.323-19.124-21.64-27.008a160.789 160.789 0 0 1 5.888-5.4c18.9-16.447 36.564-22.941 44.612-18.3ZM128 90.808c12.625 0 22.86 10.235 22.86 22.86s-10.235 22.86-22.86 22.86s-22.86-10.235-22.86-22.86s10.235-22.86 22.86-22.86Z"></path></svg>
+</file>
+
+<file path="front/src/assets/vite.svg">
+<svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
+</file>
+
+<file path="front/src/index.css">
+:root {
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #fff;
+  --border: #e5e4e7;
+  --code-bg: #f4f3ec;
+  --accent: #aa3bff;
+  --accent-bg: rgba(170, 59, 255, 0.1);
+  --accent-border: rgba(170, 59, 255, 0.5);
+  --social-bg: rgba(244, 243, 236, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 1024px) {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #9ca3af;
+    --text-h: #f3f4f6;
+    --bg: #16171d;
+    --border: #2e303a;
+    --code-bg: #1f2028;
+    --accent: #c084fc;
+    --accent-bg: rgba(192, 132, 252, 0.15);
+    --accent-border: rgba(192, 132, 252, 0.5);
+    --social-bg: rgba(47, 48, 58, 0.5);
+    --shadow:
+      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  }
+
+  #social .button-icon {
+    filter: invert(1) brightness(2);
+  }
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  width: 1126px;
+  max-width: 100%;
+  margin: 0 auto;
+  text-align: center;
+  border-inline: 1px solid var(--border);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: 56px;
+  letter-spacing: -1.68px;
+  margin: 32px 0;
+  @media (max-width: 1024px) {
+    font-size: 36px;
+    margin: 20px 0;
+  }
+}
+h2 {
+  font-size: 24px;
+  line-height: 118%;
+  letter-spacing: -0.24px;
+  margin: 0 0 8px;
+  @media (max-width: 1024px) {
+    font-size: 20px;
+  }
+}
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}
+</file>
+
+<file path="front/src/index.html">
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TERMINAL - 解答之書 v2.0</title>
+  <style>
+    /* 基礎背景與文字設定 */
+    body {
+      background-image: url('assets\windows-7.webp');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      background-repeat: no-repeat;
+      background-color: #121212;
+      /*background-color: #0b0b0f;*/
+      color: #00ff66;
+      font-family: 'Courier New', Courier, monospace;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    /* 模擬終端機視窗外殼 */
+    .terminal-window {
+      width: 700px;
+      height: 450px;
+      background-color: #16161e;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #2a2a3a;
+    }
+
+    /* 視窗上方控制列 */
+    .terminal-header {
+      background-color: #222230;
+      padding: 10px;
+      border-top-left-radius: 8px;
+      border-top-right-radius: 8px;
+      display: flex;
+      align-items: center;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .btn-red {
+      background-color: #ff5f56;
+    }
+
+    .btn-yellow {
+      background-color: #ffbd2e;
+    }
+
+    .btn-green {
+      background-color: #27c93f;
+    }
+
+    .window-title {
+      color: #787c99;
+      font-size: 12px;
+      margin-left: 20px;
+    }
+
+    /* 終端機內容文字區 */
+    .terminal-body {
+      padding: 20px;
+      flex-grow: 1;
+      overflow-y: auto;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    /* 歷史訊息與指令輸入區 */
+    .history {
+      margin-bottom: 10px;
+      white-space: pre-wrap;
+    }
+
+    .input-line {
+      display: flex;
+      align-items: center;
+    }
+
+    .prompt {
+      color: #00d2ff;
+      margin-right: 10px;
+    }
+
+    /* 隱藏原生輸入框樣式，使其融入背景 */
+    .cmd-input {
+      background: none;
+      border: none;
+      color: #00ff66;
+      font-family: inherit;
+      font-size: inherit;
+      flex-grow: 1;
+      outline: none;
+    }
+  </style>
+</head>
+
+<body>
+  
+  <div class="terminal-window">
+    <div class="terminal-header">
+      <div class="buttons">
+        <div class="btn btn-red"></div>
+        <div class="btn btn-yellow"></div>
+        <div class="btn btn-green"></div>
+      </div>
+      <div class="window-title">bash - python_final_project.sh</div>
+    </div>
+    <div class="terminal-body" id="terminalBody">
+      <div class="history" id="outputHistory">==================================================
+        🌟 歡迎來到【AI 解答之書】終端機系統 🌟
+        ==================================================
+        你可以輸入任何問題，或是輸入指令：
+        /random - 隨機獲得宇宙的一則啟示
+        /help - 顯示功能說明
+
+        請在下方輸入你的迷惘（按下 Enter 送出問卜）...</div>
+      <div class="input-line">
+        <span class="prompt">user@universe:~$</span>
+        <input type="text" class="cmd-input" id="cmdInput" autofocus autofocus autocomplete="off">
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const cmdInput = document.getElementById('cmdInput');
+    const outputHistory = document.getElementById('outputHistory');
+    const terminalBody = document.getElementById('terminalBody');
+
+    cmdInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        const query = cmdInput.value.trim();
+        if (!query) return;
+
+        // 1. 在畫面上秀出使用者剛才輸入的話
+        appendOutput(`\nuser@universe:~$ ${query}`);
+        cmdInput.value = ''; // 清空輸入框
+
+        // 2. 判斷指令
+        if (query === '/help') {
+          appendOutput(`系統指令說明：\n  /random : 拋棄大腦，由命運隨機挑選答案。\n  [輸入任何字句] : 啟動後端 Python 與 AI 進行深度演算解答。`);
+        } else if (query === '/random') {
+          simulateBackendCall(query, true);
+        } else {
+          simulateBackendCall(query, false);
+        }
+      }
+    });
+
+    function appendOutput(text) {
+      outputHistory.textContent += text + '\n';
+      // 讓捲軸自動滾動到最下方
+      terminalBody.scrollTop = terminalBody.scrollHeight;
+    }
+
+    // 3. 模擬呼叫後端（這部分之後要換成真正的 fetch API）
+    function simulateBackendCall(query, isRandom) {
+      appendOutput(`[系統] 正在呼叫 Python 後端核心...`);
+      if (!isRandom) {
+        appendOutput(`[系統] 已隨機撈取備選資料庫，正在委託 AI 進行命運評判...`);
+      }
+
+      // 模擬後端 1.5 秒的延遲（AI 計算需要時間）
+      setTimeout(() => {
+        if (isRandom) {
+          appendOutput(`>> 【隨機啟示】：勇敢前行，不要回頭。`);
+        } else {
+          appendOutput(`>> 【AI 評判解答】：關於「${query}」，宇宙給予的指引是：『放手一搏，時候未到。』`);
+        }
+      }, 1500);
+    }
+  </script>
+</body>
+
+</html>
+</file>
+
+<file path="front/src/main.jsx">
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+</file>
+
+<file path="front/vite.config.js">
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+})
+</file>
+
+<file path="index.ts">
+const server = Bun.serve({
+  port: 3000,
+  fetch(request) {
+    return new Response("Welcome to Bun!");
+  },
+});
+
+console.log(`Listening on http://localhost:${server.port}`);
+</file>
+
+<file path="package.json">
+{
+  "name": "python-report",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
+</file>
+
+<file path="README.md">
+---
+noteId: "8ffa9910628a11f1a667595876b1983c"
+tags: []
+
+---
+
+# python-report
+
+To install dependencies:
+
+```bash
+bun install
+```
+
+To run:
+
+```bash
+bun run index.ts
+```
+
+This project was created using `bun init` in bun v1.3.14. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+</file>
+
+<file path="test_code/0601.ipynb">
+{
+  "cells": [
+    {
+      "cell_type": "code",
+      "execution_count": 1,
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "5ichqvupxHRK",
+        "outputId": "3f7e8ce5-43d5-4175-cc3b-1b2484440e59"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "資料庫連接成功\n",
+            "(1, '肯定', 20)\n",
+            "(2, '否定', 20)\n",
+            "(3, '等待', 30)\n",
+            "(4, '警告', 15)\n",
+            "(5, '反思', 15)\n"
+          ]
+        }
+      ],
+      "source": [
+        "import sqlite3\n",
+        "\n",
+        "conn = sqlite3.connect(\"answer_book.db\")\n",
+        "conn.execute(\"PRAGMA foreign_keys = ON\")\n",
+        "cursor = conn.cursor()\n",
+        "print(\"資料庫連接成功\")\n",
+        "cursor.execute(\"SELECT * FROM AnswerType\")\n",
+        "\n",
+        "rows = cursor.fetchall()\n",
+        "for row in rows:\n",
+        "    print(row)\n",
+        "\n",
+        "cursor.execute(\"\"\"\n",
+        "SELECT id, weight\n",
+        "FROM AnswerType\n",
+        "\"\"\")\n",
+        "\n",
+        "types = cursor.fetchall()\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 6,
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "CHFMeHqY8mCa",
+        "outputId": "0d14af3e-f30d-42bc-d232-19dfc34b93e4"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "關於決定還需要等待。\n"
+          ]
+        }
+      ],
+      "source": [
+        "import random\n",
+        "\n",
+        "cursor.execute(\"\"\"\n",
+        "SELECT id, weight\n",
+        "FROM AnswerType\n",
+        "\"\"\")\n",
+        "\n",
+        "types = cursor.fetchall()\n",
+        "\n",
+        "type_id = random.choices(\n",
+        "    [row[0] for row in types],\n",
+        "    weights=[row[1] for row in types]\n",
+        ")[0]\n",
+        "\n",
+        "cursor.execute(\"\"\"\n",
+        "SELECT id, content\n",
+        "FROM Template\n",
+        "WHERE type_id = ?\n",
+        "ORDER BY RANDOM()\n",
+        "LIMIT 1\n",
+        "\"\"\",(type_id,))\n",
+        "\n",
+        "template_id, template = cursor.fetchone()\n",
+        "\n",
+        "cursor.execute(\"\"\"\n",
+        "SELECT slot_name, category_id\n",
+        "FROM TemplateSlot\n",
+        "WHERE template_id = ?\n",
+        "\"\"\",(template_id,))\n",
+        "\n",
+        "slots = cursor.fetchall()\n",
+        "\n",
+        "fill_data = {}\n",
+        "\n",
+        "for slot_name, category_id in slots:\n",
+        "\n",
+        "    cursor.execute(\"\"\"\n",
+        "    SELECT content\n",
+        "    FROM Word\n",
+        "    WHERE category_id = ?\n",
+        "    ORDER BY RANDOM()\n",
+        "    LIMIT 1\n",
+        "    \"\"\",(category_id,))\n",
+        "\n",
+        "    fill_data[slot_name] = cursor.fetchone()[0]\n",
+        "\n",
+        "result = template.format(**fill_data)\n",
+        "\n",
+        "print(result)"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 3,
+      "metadata": {
+        "id": "BQ2EGgjy6wbs"
+      },
+      "outputs": [],
+      "source": [
+        "import sqlite3\n",
+        "\n",
+        "def safe_connect():\n",
+        "    conn = sqlite3.connect(\"answer_book.db\")\n",
+        "\n",
+        "    try:\n",
+        "        conn.execute(\"PRAGMA integrity_check;\")\n",
+        "    except:\n",
+        "        print(\"DB 壞了，正在重建...\")\n",
+        "        conn.close()\n",
+        "\n",
+        "        conn = sqlite3.connect(\"answer_book.db\")\n",
+        "        with open(\"init.sql\", \"r\", encoding=\"utf-8\") as f:\n",
+        "            conn.executescript(f.read())\n",
+        "        conn.commit()\n",
+        "\n",
+        "    return conn"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 4,
+      "metadata": {
+        "id": "VCsxA59xxg3O"
+      },
+      "outputs": [],
+      "source": [
+        "cursor.execute(\"\"\"\n",
+        "SELECT id, weight\n",
+        "FROM AnswerType\n",
+        "\"\"\")\n",
+        "\n",
+        "types = cursor.fetchall()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 5,
+      "metadata": {
+        "id": "0Of03RAQ7bOy"
+      },
+      "outputs": [],
+      "source": [
+        "import random\n",
+        "\n",
+        "cursor.execute(\"\"\"\n",
+        "SELECT id,name,weight\n",
+        "FROM AnswerType\n",
+        "\"\"\")\n",
+        "\n",
+        "types = cursor.fetchall()\n",
+        "\n",
+        "type_id = random.choices(\n",
+        "    [row[0] for row in types],\n",
+        "    weights=[row[2] for row in types]\n",
+        ")[0]"
+      ]
+    }
+  ],
+  "metadata": {
+    "colab": {
+      "provenance": []
+    },
+    "kernelspec": {
+      "display_name": "base",
+      "language": "python",
+      "name": "python3"
+    },
+    "language_info": {
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "file_extension": ".py",
+      "mimetype": "text/x-python",
+      "name": "python",
+      "nbconvert_exporter": "python",
+      "pygments_lexer": "ipython3",
+      "version": "3.13.9"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    // Environment setup & latest features
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "types": ["bun"],
+
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    // Some stricter flags (disabled by default)
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": false
+  }
+}
+</file>
+
+</files>
