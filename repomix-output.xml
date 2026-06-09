@@ -3126,190 +3126,6 @@ bun run index.ts
 This project was created using `bun init` in bun v1.3.14. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
 </file>
 
-<file path="templates/index.html">
-<!doctype html>
-<html lang="en">
-
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>解答之書 - 終端機版</title>
-  <style>
-    /* 簡易的終端機科技感樣式 */
-    body {
-      background-color: #121212;
-      color: #00ff66;
-      font-family: 'Courier New', Courier, monospace;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-    }
-
-    .terminal-window {
-      width: 600px;
-      background-color: #1a1a1a;
-      border: 2px solid #333;
-      border-radius: 8px;
-      box-shadow: 0 0 20px rgba(0, 255, 102, 0.2);
-      overflow: hidden;
-    }
-
-    .terminal-header {
-      background-color: #333;
-      padding: 5px 10px;
-      color: #fff;
-      font-size: 12px;
-      display: flex;
-      justify-content: space-between;
-    }
-
-    .terminal-body {
-      padding: 20px;
-      height: 300px;
-      overflow-y: auto;
-    }
-
-    .output {
-      margin-bottom: 15px;
-      white-space: pre-line;
-    }
-
-    .input-line {
-      display: flex;
-      align-items: center;
-    }
-
-    .prompt {
-      color: #00d2ff;
-      margin-right: 10px;
-    }
-
-    button {
-      background-color: #00ff66;
-      color: #121212;
-      border: none;
-      padding: 8px 15px;
-      font-family: inherit;
-      font-weight: bold;
-      cursor: pointer;
-      border-radius: 4px;
-      margin-top: 10px;
-    }
-
-    button:hover {
-      background-color: #00cc55;
-    }
-  </style>
-</head>
-
-<body>
-  <div id="root">
-    <div class="terminal-window">
-      <div class="terminal-header">
-        <span>Terminal - AnswerBook.exe</span>
-        <span>● ● ●</span>
-      </div>
-      <div class="terminal-body">
-        <div class="output" id="terminal-output">歡迎來到解答之書終端機。請冥想你的問題，然後點擊下方按鈕獲取宇宙的啟示...</div>
-        <div class="input-line">
-          <span class="prompt">></span>
-          <button id="get-answer-btn">抽取解答</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    const cmdInput = document.getElementById('cmdInput');
-    const outputHistory = document.getElementById('outputHistory');
-    const terminalBody = document.getElementById('terminalBody');
-
-    cmdInput.addEventListener('keydown', async function (e) {
-      if (e.key === 'Enter') {
-        const query = cmdInput.value.trim();
-        if (!query) return;
-
-        // 1. 在畫面上秀出使用者輸入的內容
-        appendOutput(`\nuser@universe:~$ ${query}`);
-        cmdInput.value = ''; // 清空輸入框
-
-        // 2. 判斷終端機指令
-        if (query === '/help') {
-          appendOutput(`系統指令說明：\n  /random  : 拋棄大腦，直接抽一則宇宙啟示。\n  /history : 查閱過去最近 10 筆問卜紀錄。\n  [隨意輸入] : 輸入你的迷惘，啟動後端資料庫進行命運評判。`);
-        } else if (query === '/history') {
-          await fetchAndShowHistory();
-        } else if (query === '/random') {
-          await callBackendAnswer(null); // 不帶問題的隨機抽卡
-        } else {
-          await callBackendAnswer(query); // 帶有問題的問卜
-        }
-      }
-    });
-
-    function appendOutput(text) {
-      outputHistory.textContent += text + '\n';
-      terminalBody.scrollTop = terminalBody.scrollHeight; // 自動滾動
-    }
-
-    // 向後端請求答案 (支援純隨機與輸入問題)
-    async function callBackendAnswer(question) {
-      appendOutput(`[系統] 正在呼叫後端核心...`);
-      if (question) {
-        appendOutput(`[系統] 已檢索備選資料庫，正在委託 AI 針對問題「${question}」進行命運評判...`);
-      }
-
-      try {
-        // 判斷要用 POST 傳問題，還是用 GET 純隨機抽卡
-        const fetchOptions = question
-          ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) }
-          : { method: 'GET' };
-
-        const response = await fetch('/api/get_answer', fetchOptions);
-        const data = await response.json();
-
-        if (data.status === 'success') {
-          appendOutput(`>> 【宇宙評判解答】：${data.answer}`);
-        } else {
-          appendOutput(`[錯誤] 宇宙連線失敗：${data.message}`);
-        }
-      } catch (error) {
-        appendOutput(`[錯誤] 無法連接後端伺服器，請檢查 Bun 是否正在運行。`);
-      }
-    }
-
-    // 抓取並渲染歷史紀錄
-    async function fetchAndShowHistory() {
-      appendOutput(`[系統] 正在讀取 SQLite 歷史核心紀錄...`);
-
-      try {
-        const response = await fetch('/api/get_history');
-        const data = await response.json();
-
-        if (data.status === 'success' && data.history.length > 0) {
-          appendOutput(`\n時間\t\t\t問題\t\t\t解答`);
-          appendOutput(`----------------------------------------------------------------------`);
-          data.history.forEach(item => {
-            // 格式化輸出在終端機視窗中
-            appendOutput(`[${item.time}] Q: ${item.question} -> Ans: ${item.answer}`);
-          });
-          appendOutput(`----------------------------------------------------------------------`);
-        } else if (data.history.length === 0) {
-          appendOutput(`>> [提示] 宇宙核心中尚無你的歷史紀錄，快去輸入問題進行第一次問卜吧！`);
-        } else {
-          appendOutput(`[錯誤] 讀取紀錄失敗：${data.message}`);
-        }
-      } catch (error) {
-        appendOutput(`[錯誤] 無法連接後端讀取紀錄。`);
-      }
-    }
-  </script>
-</body>
-
-</html>
-</file>
-
 <file path="tsconfig.json">
 {
   "compilerOptions": {
@@ -3558,140 +3374,6 @@ This project was created using `bun init` in bun v1.3.14. [Bun](https://bun.com)
 }
 </file>
 
-<file path="server.ts">
-import { Database } from "bun:sqlite";
-
-// 1. 連接你原本的資料庫檔案（Bun 內建 SQLite 支援）
-const db = new Database("answer_book.db");
-
-// 新增：如果歷史紀錄表不存在，則自動建立
-db.run(`
-  CREATE TABLE IF NOT EXISTS HistoryRecord (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    question TEXT NOT NULL,
-    answer TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
-
-// 模擬 Python 的 random.choices (根據權重隨機抽樣)
-function choiceWithWeights(items: any[], weights: number[]): any {
-  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-  let randomNum = Math.random() * totalWeight;
-  
-  for (let i = 0; i < items.length; i++) {
-    const currentWeight = weights[i]; // 先取出數值
-
-    // ✅ 關鍵修正：透過安全檢查確保 currentWeight 不是 undefined 
-    if (currentWeight !== undefined) {
-      if (randomNum < currentWeight) {
-        return items[i];
-      }
-      randomNum -= currentWeight;
-    }
-  }
-  return items[0];
-}
-
-// 2. 啟動 Bun 全端伺服器
-const server = Bun.serve({
-  // 優先讀取 Render 提供的 PORT，本地則預設 5000
-  port: process.env.PORT || 5000,
-  // 關鍵新增：在 Docker 環境下必須指定為 '0.0.0.0'
-  hostname: "0.0.0.0",
-  async fetch(req) {
-    const url = new URL(req.url);
-
-    // 路由 A：前端首頁 API - 直接渲染網頁
-    if (url.pathname === "/" || url.pathname === "/index.html") {
-      return new Response(Bun.file("templates/index.html"), {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    }
-
-    // 路由 B：宇宙解答 API（替代原本 Python Flask 的 /api/get_answer）
-    if (url.pathname === "/api/get_answer" && req.method === "GET") {
-      try {
-        // 核心邏輯 1：根據權重抽出 AnswerType
-        const types: any[] = db.query("SELECT id, name, weight FROM AnswerType").all();
-        const typeId = choiceWithWeights(
-          types.map(t => t.id),
-          types.map(t => t.weight)
-        );
-
-        // 核心邏輯 2：隨機抽出該分類下的一個模板
-        const templateRow: any = db.query(`
-          SELECT id, content FROM Template 
-          WHERE type_id = $typeId 
-          ORDER BY RANDOM() LIMIT 1
-        `).get({ $typeId: typeId });
-
-        if (!templateRow) {
-          return Response.json({ status: "error", message: "找不到對應的模板" }, { status: 404 });
-        }
-
-        const { id: templateId, content: templateContent } = templateRow;
-
-        // 核心邏輯 3 & 4：找出 Slot 並填入 Word
-        const slots: any[] = db.query("SELECT slot_name, category_id FROM TemplateSlot WHERE template_id = $templateId")
-          .all({ $templateId: templateId });
-
-        let resultMessage = templateContent;
-
-        for (const slot of slots) {
-          const wordRow: any = db.query(`
-            SELECT content FROM Word 
-            WHERE category_id = $categoryId 
-            ORDER BY RANDOM() LIMIT 1
-          `).get({ $categoryId: slot.category_id });
-
-          const word = wordRow ? wordRow.content : "";
-          // 替換掉字串中的 {thing}, {person} 等挖空
-          resultMessage = resultMessage.replace(`{${slot.slot_name}}`, word);
-        }
-
-// ----------------------------------------------------
-
-        // 🔥 【關鍵新增】將本次的占卜紀錄寫入 SQLite 資料庫
-        db.run(
-  "INSERT INTO HistoryRecord (question, answer) VALUES ($question, $answer)",
-  { 
-    "$question": userQuestion, 
-    "$answer": resultMessage 
-  }
-);
-
-        return Response.json({ status: "success", answer: resultMessage });
-
-      } catch (e: any) {
-        return Response.json({ status: "error", message: e.message }, { status: 500 });
-      }
-    }
-
-    // 🔥 【全新新增】路由 C：獲取歷史紀錄 API (限制唯讀取最新 10 筆)
-    if (url.pathname === "/api/get_history" && req.method === "GET") {
-      try {
-        const history: any[] = db.query(`
-          SELECT question, answer, datetime(created_at, 'localtime') as time 
-          FROM HistoryRecord 
-          ORDER BY id DESC 
-          LIMIT 10
-        `).all();
-
-        return Response.json({ status: "success", history: history });
-      } catch (e: any) {
-        return Response.json({ status: "error", message: e.message }, { status: 500 });
-      }
-    }
-
-    return new Response("Not Found", { status: 404 });
-  },
-});
-
-console.log(`\n🛸 [AI解答之書] 核心伺服器已由 Bun 強勢驅動！`);
-console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
-</file>
-
 <file path="test_code/0601.ipynb">
 {
   "cells": [
@@ -3903,6 +3585,513 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
   "nbformat": 4,
   "nbformat_minor": 0
 }
+</file>
+
+<file path="server.ts">
+import { Database } from "bun:sqlite";
+
+// 1. 連接你原本的資料庫檔案（Bun 內建 SQLite 支援）
+const db = new Database("answer_book.db");
+
+// 新增：如果歷史紀錄表不存在，則自動建立
+db.run(`
+  CREATE TABLE IF NOT EXISTS HistoryRecord (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+// 模擬 Python 的 random.choices (根據權重隨機抽樣)
+function choiceWithWeights(items: any[], weights: number[]): any {
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+  let randomNum = Math.random() * totalWeight;
+  
+  for (let i = 0; i < items.length; i++) {
+    const currentWeight = weights[i]; // 先取出數值
+
+    // ✅ 關鍵修正：透過安全檢查確保 currentWeight 不是 undefined 
+    if (currentWeight !== undefined) {
+      if (randomNum < currentWeight) {
+        return items[i];
+      }
+      randomNum -= currentWeight;
+    }
+  }
+  return items[0];
+}
+
+// 2. 啟動 Bun 全端伺服器
+const server = Bun.serve({
+  // 優先讀取 Render 提供的 PORT，本地則預設 5000
+  port: process.env.PORT || 5000,
+  // 關鍵新增：在 Docker 環境下必須指定為 '0.0.0.0'
+  hostname: "0.0.0.0",
+  async fetch(req) {
+    const url = new URL(req.url);
+    // 確保 userQuestion 變數在 query 之前有被宣告（如果前面漏掉了請補上）
+    // 如果你的前端傳過來的是 question，確保它有 fallback 預設字串
+    const userQuestion = "未輸入問題 (純隨機抽卡)";
+    // 路由 A：前端首頁 API - 直接渲染網頁
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      return new Response(Bun.file("templates/index.html"), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // 路由 B：宇宙解答 API
+if (url.pathname === "/api/get_answer" && req.method === "GET") {
+  try {
+    // 🔥 【關鍵修正】從前端傳過來的 URL 網址參數中取得 "question"
+    // 如果網址裡有 ?question=xxx 就用它，沒有的話（例如純隨機）就 fallback 回預設字串
+    const urlQuestion = url.searchParams.get("question");
+    const userQuestion = urlQuestion && urlQuestion.trim() !== "" 
+      ? urlQuestion 
+      : "未輸入問題 (純隨機抽卡)";
+
+    // 核心邏輯 1：根據權重抽出 AnswerType
+    const types: any[] = db.query("SELECT id, name, weight FROM AnswerType").all();
+    const typeId = choiceWithWeights(
+      types.map(t => t.id),
+      types.map(t => t.weight)
+    );
+
+    // 核心邏輯 2：隨機抽出該分類下的一個模板
+    const templateRow: any = db.query(`
+      SELECT id, content FROM Template 
+      WHERE type_id = $typeId 
+      ORDER BY RANDOM() LIMIT 1
+    `).get({ $typeId: typeId });
+
+    if (!templateRow) {
+      return Response.json({ status: "error", message: "找不到對應的模板" }, { status: 404 });
+    }
+
+    const { id: templateId, content: templateContent } = templateRow;
+
+    // 核心邏輯 3 & 4：找出 Slot 並填入 Word
+    const slots: any[] = db.query("SELECT slot_name, category_id FROM TemplateSlot WHERE template_id = $templateId")
+      .all({ $templateId: templateId });
+
+    let resultMessage = templateContent;
+
+    for (const slot of slots) {
+      const wordRow: any = db.query(`
+        SELECT content FROM Word 
+        WHERE category_id = $categoryId 
+        ORDER BY RANDOM() LIMIT 1
+      `).get({ $categoryId: slot.category_id });
+
+      const word = wordRow ? wordRow.content : "";
+      resultMessage = resultMessage.replace(`{${slot.slot_name}}`, word);
+    }
+
+// ----------------------------------------------------
+
+// 🔥 將正確辨識到的 userQuestion 寫入 SQLite 歷史紀錄
+    db.run(
+      "INSERT INTO HistoryRecord (question, answer) VALUES (?, ?)",
+      [userQuestion, resultMessage]
+    );
+
+        return Response.json({ status: "success", answer: resultMessage });
+
+      } catch (e: any) {
+        return Response.json({ status: "error", message: e.message }, { status: 500 });
+      }
+    }
+
+    // 🔥 【全新新增】路由 C：獲取歷史紀錄 API (限制唯讀取最新 10 筆)
+    if (url.pathname === "/api/get_history" && req.method === "GET") {
+      try {
+        const history: any[] = db.query(`
+          SELECT question, answer, datetime(created_at, 'localtime') as time 
+          FROM HistoryRecord 
+          ORDER BY id DESC 
+          LIMIT 10
+        `).all();
+
+        return Response.json({ status: "success", history: history });
+      } catch (e: any) {
+        return Response.json({ status: "error", message: e.message }, { status: 500 });
+      }
+    }
+
+    // 🔥 【全新新增】路由 D：清除所有歷史紀錄 API
+if (url.pathname === "/api/clear_history" && req.method === "POST") {
+  try {
+    // 執行 SQL 指令，將 HistoryRecord 資料表清空
+    db.run("DELETE FROM HistoryRecord");
+    
+    return Response.json({ status: "success", message: "所有占卜紀錄已成功從宇宙核心抹除！" });
+  } catch (e: any) {
+    return Response.json({ status: "error", message: e.message }, { status: 500 });
+  }
+}
+
+    return new Response("Not Found", { status: 404 });
+  },
+});
+
+console.log(`\n🛸 [AI解答之書] 核心伺服器已由 Bun 強勢驅動！`);
+console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
+</file>
+
+<file path="templates/index.html">
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>極客終端機 - AI 解答之書</title>
+  <style>
+    /* 全域終端機風格設定 */
+    body {
+      background-color: #0a0a0a;
+      color: #00ff33;
+      font-family: 'Courier New', Courier, monospace;
+      padding: 20px;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+
+    /* 終端機主視窗外殼 */
+    .terminal-window {
+      width: 100%;
+      max-width: 800px;
+      background-color: #111;
+      /*border: 2px solid #00ff33;*/
+      box-shadow: 0 0 20px rgba(0, 255, 51, 0.2);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    /* 視窗頂部控制列 */
+    .terminal-header {
+      background-color: #222;
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #333;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .button-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .dot-red {
+      background-color: #ff5f56;
+    }
+
+    .dot-yellow {
+      background-color: #ffbd2e;
+    }
+
+    .dot-green {
+      background-color: #27c93f;
+    }
+
+    .window-title {
+      margin-left: 20px;
+      font-size: 14px;
+      color: #888;
+    }
+
+    /* 終端機內容輸出區 */
+    .terminal-body {
+      padding: 20px;
+      height: 400px;
+      overflow-y: auto;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    /* 功能按鈕區（取代原本死板的純打字） */
+    .action-panel {
+      margin-top: 20px;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .geek-btn {
+      background-color: transparent;
+      color: #00ff33;
+      border: 1px solid #00ff33;
+      padding: 10px 20px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+    }
+
+    .geek-btn:hover {
+      background-color: #00ff33;
+      color: #0a0a0a;
+      box-shadow: 0 0 15px rgba(0, 255, 51, 0.6);
+    }
+
+    /* 🔥 動態彈出對話格 (Modal) 樣式 */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-box {
+      background-color: #111;
+      border: 2px solid #00ff33;
+      padding: 30px;
+      border-radius: 5px;
+      width: 90%;
+      max-width: 500px;
+      box-shadow: 0 0 25px rgba(0, 255, 51, 0.4);
+      text-align: left;
+    }
+
+    .modal-box h3 {
+      margin-top: 0;
+      color: #00ff33;
+    }
+
+    .modal-input {
+      width: 100%;
+      background-color: #000;
+      border: 1px solid #00ff33;
+      color: #00ff33;
+      padding: 10px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;
+      box-sizing: border-box;
+      margin-bottom: 20px;
+      outline: none;
+    }
+
+    .modal-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    /* 游標閃爍效果 */
+    .cursor {
+      display: inline-block;
+      width: 10px;
+      height: 18px;
+      background-color: #00ff33;
+      animation: blink 0.8s infinite;
+      vertical-align: middle;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="terminal-window">
+    <div class="terminal-header">
+      <div class="buttons">
+        <div class="button-dot dot-red"></div>
+        <div class="button-dot dot-yellow"></div>
+        <div class="button-dot dot-green"></div>
+      </div>
+      <div class="window-title">universe_terminal.sh</div>
+    </div>
+    <div class="terminal-body" id="output">
+      <div>[System] 系統初始化成功...</div>
+      <div>[System] 正在連線至宇宙核心解碼器...</div>
+      <div>[System] 請點擊下方指令開始占卜。</div>
+      <div>[System] 貼心提醒，問題請以封閉式問題的格式提問<span class="cursor"></span></div>
+    </div>
+  </div>
+
+  <div class="action-panel">
+    <button class="geek-btn" onclick="triggerRandomAnswer()">[ 隨機抽取解答 ]</button>
+    <button class="geek-btn" onclick="openQuestionModal()">[ 輸入問題占卜 ]</button>
+    <button class="geek-btn" onclick="fetchHistory()">[ 查看歷史紀錄 ]</button>
+    <button class="geek-btn" onclick="clearHistoryFromServer()" style="color: #ff5f56; border-color: #ff5f56;">[ 清除歷史紀錄
+      ]</button>
+  </div>
+
+  <div class="modal-overlay" id="questionModal">
+    <div class="modal-box">
+      <h3>> 請輸入你想向宇宙詢問的問題：</h3>
+      <input type="text" id="userQuestionInput" class="modal-input" placeholder="例如：我這學期期末考會過嗎？" autocomplete="off">
+      <div class="modal-buttons">
+        <button class="geek-btn" onclick="closeQuestionModal()">取消</button>
+        <button class="geek-btn" onclick="submitQuestion()">送出冥想</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const outputDiv = document.getElementById('output');
+    const modal = document.getElementById('questionModal');
+    const questionInput = document.getElementById('userQuestionInput');
+
+    // 將訊息輸出到終端機畫面的輔助函式
+    function logToTerminal(message, type = 'info') {
+      const prefix = type === 'error' ? '[Error] ' : type === 'success' ? '[Success] ' : '> ';
+      const div = document.createElement('div');
+      div.textContent = prefix + message;
+      outputDiv.appendChild(div);
+      outputDiv.scrollTop = outputDiv.scrollHeight; // 自動捲動到最底部
+    }
+
+    // 開啟彈出填寫格
+    function openQuestionModal() {
+      modal.classList.add('active');
+      questionInput.value = ''; // 清空欄位
+      setTimeout(() => questionInput.focus(), 100); // 自動聚焦
+    }
+
+    // 關閉彈出填寫格
+    function closeQuestionModal() {
+      modal.classList.remove('active');
+    }
+
+    // 監聽彈出框的 Enter 鍵送出
+    questionInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        submitQuestion();
+      }
+    });
+
+    // 處理 [輸入問題占卜] 送出
+    async function submitQuestion() {
+      const question = questionInput.value.trim();
+      if (!question) {
+        alert('請先輸入問題！');
+        return;
+      }
+
+      closeQuestionModal(); // 關閉對話框
+      logToTerminal(`使用者提問: ${question}`);
+
+      // 駭客炫技感：分析中動畫
+      logToTerminal('正在分析量子力學機率矩陣...', 'info');
+      logToTerminal('正在與天界大數據進行特徵匹配...', 'info');
+
+      try {
+        // 呼叫後端 API（帶上問題參數）
+        const response = await fetch(`/api/get_answer?question=${encodeURIComponent(question)}`);
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          // 延遲 1 秒顯示解答，加強儀式感
+          setTimeout(() => {
+            logToTerminal(`宇宙給予的啟示: ${data.answer}`, 'success');
+          }, 1000);
+        } else {
+          logToTerminal(`核心解碼失敗: ${data.message}`, 'error');
+        }
+      } catch (error) {
+        logToTerminal('無法連線到預言伺服器。', 'error');
+      }
+    }
+
+    // 處理 [隨機抽取解答] 按鈕
+    async function triggerRandomAnswer() {
+      logToTerminal('觸發隨機解答封包抽取...');
+      try {
+        // 不帶 question 參數，後端就會執行隨機抽取
+        const response = await fetch('/api/get_answer');
+        const data = await response.json();
+        if (data.status === 'success') {
+          logToTerminal(`隨機啟示: ${data.answer}`, 'success');
+        } else {
+          logToTerminal('抽取失敗。', 'error');
+        }
+      } catch (error) {
+        logToTerminal('連線異常。', 'error');
+      }
+    }
+
+    // 處理 [查看歷史紀錄] 按鈕
+    async function fetchHistory() {
+      logToTerminal('正在讀取本機 SQLite 歷史占卜日誌...');
+      try {
+        const response = await fetch('/api/get_history');
+        const data = await response.json();
+
+        if (data.status === 'success' && data.history.length > 0) {
+          logToTerminal('--- 歷史紀錄查詢結果 (最新10筆) ---');
+          data.history.forEach((item, index) => {
+            logToTerminal(`[${item.time}] 問: ${item.question || '無'} -> 答: ${item.answer}`);
+          });
+          logToTerminal('----------------------------------');
+        } else {
+          logToTerminal('查無任何占卜紀錄。', 'info');
+        }
+      } catch (error) {
+        logToTerminal('歷史紀錄讀取失敗。', 'error');
+      }
+    }
+
+    // 🔥 全新新增：呼叫後端 API 清除所有歷史紀錄
+      async function clearHistoryFromServer() {
+        // 跳出瀏覽器內建確認視窗，防止手殘誤點
+        if (!confirm("確定要永遠抹除宇宙中所有的占卜歷史紀錄嗎？此操作無法復原。")) {
+          return;
+        }
+
+        logToTerminal('正在對 SQLite 資料庫發送重置訊號...', 'info');
+
+        try {
+          // 呼叫我們剛剛在後端寫好的 API
+          const response = await fetch('/api/clear_history', { method: 'POST' });
+          const data = await response.json();
+
+          if (data.status === 'success') {
+            logToTerminal(data.message, 'success');
+            logToTerminal('歷史紀錄快取已重置。', 'info');
+          } else {
+            logToTerminal(`抹除紀錄失敗：${data.message}`, 'error');
+          }
+        } catch (error) {
+          logToTerminal('無法連線到預言伺服器進行清除動作。', 'error');
+        }
+      }
+  </script>
+</body>
+
+</html>
 </file>
 
 </files>
