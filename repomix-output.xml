@@ -3964,8 +3964,8 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
     <button class="geek-btn" onclick="triggerRandomAnswer()">[ 隨機抽取解答 ]</button>
     <button class="geek-btn" onclick="openQuestionModal()">[ 輸入問題占卜 ]</button>
     <button class="geek-btn" onclick="fetchHistory()">[ 查看歷史紀錄 ]</button>
-    <button class="geek-btn" onclick="clearHistoryFromServer()" style="color: #ff5f56; border-color: #ff5f56;">[ 清除歷史紀錄
-      ]</button>
+    <button class="geek-btn" onclick="openNicknameModal()" style="color: #ffbd2e; border-color: #ffbd2e;">[ 變更宇宙暱稱 ]</button>
+    <button class="geek-btn" onclick="clearHistoryFromServer()" style="color: #ff5f56; border-color: #ff5f56;">[ 清除歷史紀錄 ]</button>
   </div>
 
   <div class="modal-overlay" id="questionModal">
@@ -4026,19 +4026,36 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
       }
     });
 
-    // 處理暱稱送出與儲存
-    function submitNickname() {
-      let name = nicknameInput.value.trim();
+  // 處理暱稱送出與儲存（完全覆蓋舊的 submitNickname）
+  function submitNickname() {
+    let name = nicknameInput.value.trim();
 
-      if (!name) {
-        name = "匿名迷惘者_" + Math.floor(Math.random() * 1000);
-      }
+    if (!name) {
+      name = "匿名迷惘者_" + Math.floor(Math.random() * 1000);
+    }
 
-      userNickname = name;
-      localStorage.setItem('user_nickname', userNickname);
+    // 記錄舊暱稱，用來比對是不是「變更」
+    const oldNickname = userNickname;
+    userNickname = name;
+    localStorage.setItem('user_nickname', userNickname);
 
-      nicknameModal.classList.remove('active'); // 關閉彈窗
+    nicknameModal.classList.remove('active'); // 關閉彈窗
+
+    // 根據是第一次連線還是中途變更，印出不同的終端機訊息
+    if (oldNickname && oldNickname !== userNickname) {
+      logToTerminal(`暱稱變更成功！【${oldNickname}】 ➔ 【${userNickname}】。命運日誌已重載。`, 'success');
+    } else {
       logToTerminal(`通行證已建立！歡迎你，【${userNickname}】。請開始你的占卜。`, 'success');
+    }
+  }
+
+  // 擴充原本的 openNicknameModal 函式，讓它打開時會自動填入目前的暱稱
+    const originalOpenNicknameModal = openNicknameModal;
+    openNicknameModal = function () {
+      if (userNickname) {
+        nicknameInput.value = userNickname; // 自動帶入舊暱稱，方便使用者修改
+      }
+      originalOpenNicknameModal();
     }
 
     // 將訊息輸出到終端機畫面的輔助函式
