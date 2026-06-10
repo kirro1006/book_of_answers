@@ -3424,7 +3424,7 @@ This project was created using `bun init` in bun v1.3.14. [Bun](https://bun.com)
     },
     {
       "cell_type": "code",
-      "execution_count": 6,
+      "execution_count": 2,
       "metadata": {
         "colab": {
           "base_uri": "https://localhost:8080/"
@@ -3437,7 +3437,7 @@ This project was created using `bun init` in bun v1.3.14. [Bun](https://bun.com)
           "name": "stdout",
           "output_type": "stream",
           "text": [
-            "關於決定還需要等待。\n"
+            "關於機會還需要等待。\n"
           ]
         }
       ],
@@ -3765,7 +3765,7 @@ console.log(`🌍 請用瀏覽器打開：http://localhost:${server.port}`);
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>極客終端機 - AI 解答之書</title>
+  <title>解答之書系統-</title>
   <style>
     /* 全域終端機風格設定 */
     body {
