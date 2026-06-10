@@ -2,10 +2,24 @@ import { Database } from "bun:sqlite";
 import { GoogleGenAI } from "@google/genai";
 import backupAnswers from "./backup_answers.json"; // 直接匯入備用 JSON 金句庫
 
-// 1. 初始化資料庫與 AI 客戶端
-const db = new Database("answer_book.db");
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "YOUR_FREE_API_KEY" });
 
+
+// 👑 正確的（把尾巴的 [cite: 1] 刪乾淨）
+const db = new Database("answer_book.db");
+
+// 🚀 2026 終極相容洗滌：只去空格與引號，完全相信你從 AI Studio 貼過來的任何格式！
+let rawApiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : "";
+rawApiKey = rawApiKey.replace(/^["']|["']$/g, ""); 
+
+let ai: GoogleGenAI | null = null;
+if (rawApiKey && rawApiKey !== "YOUR_FREE_API_KEY" && rawApiKey.length > 10) {
+  ai = new GoogleGenAI({ apiKey: rawApiKey });
+  console.log("✨ [系統提示] Gemini AI 客戶端已成功載入最新版安全金鑰！");
+} else {
+  console.warn("⚠️ [警告] 未檢測到有效的 GEMINI_API_KEY，AI 智慧語意防護將自動切換為全自動通過模式。");
+}
+
+console.log("GEMINI =", rawApiKey);
 // 自動建立歷史紀錄表與預設資料表
 db.run(`
   CREATE TABLE IF NOT EXISTS HistoryRecord (
@@ -47,6 +61,11 @@ function choiceWithWeights(items: any[], weights: number[]): any {
 
 // 🧠 核心加分功能：調用 AI 審查語意是否通順
 async function checkSemanticValidity(sentence: string): Promise<boolean> {
+  // 防防呆：如果上面 AI 根本沒初始化成功，直接優雅放行，不拋出錯誤
+  if (!ai) {
+    console.log(`⚠️ [防護牆通報] 由於缺少 API Key，已自動放行句子：${sentence}`);
+    return true; 
+  }
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
