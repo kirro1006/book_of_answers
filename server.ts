@@ -104,20 +104,32 @@ const server = Bun.serve({
           sqlGeneratedSentence = sqlGeneratedSentence.replace(`{${slot.slot_name}}`, word);
         }
 
-        // Step 2: 送交 AI 審查
+// -----------------------------------------------------------------
+
         let finalAnswer = sqlGeneratedSentence;
-        const isSemanticOk = await checkSemanticValidity(sqlGeneratedSentence);
 
-        // Step 3: 降級處理（Fallback）
-        if (!isSemanticOk) {
-          const randomIndex = Math.floor(Math.random() * backupAnswers.length);
-          const fallbackObj = backupAnswers[randomIndex];
-          if (fallbackObj) {
-            finalAnswer = fallbackObj.content;
-            console.log(`⚠️ [降級啟動] 原句子語意不通，已成功抽換為備用金句：${finalAnswer}`);
+        // ✅ 新增關鍵判斷：只有當 url 有傳入 question，且不是預設的空字串時，才啟動 AI 審查
+        if (url.searchParams.get("question") && url.searchParams.get("question")?.trim() !== "") {
+          
+          console.log(`🧠 [系統提示] 偵測到使用者提問，啟動 AI 智慧語意防護牆...`);
+          
+          // Step 2: 送交 AI 審查
+          const isSemanticOk = await checkSemanticValidity(sqlGeneratedSentence);
+
+          // Step 3: 降級處理（Fallback）
+          if (!isSemanticOk) {
+            const randomIndex = Math.floor(Math.random() * backupAnswers.length);
+            const fallbackObj = backupAnswers[randomIndex];
+            if (fallbackObj) {
+              finalAnswer = fallbackObj.content;
+              console.log(`⚠️ [降級啟動] 原句子語意不通，已成功抽換為備用金句：${finalAnswer}`);
+            }
           }
+          
+        } else {
+          // 🎲 如果是純隨機抽卡（沒有 question 參數），則跳過 AI 審查，直接使用 SQLite 組合的成果
+          console.log(`🎲 [系統提示] 純隨機抽取封包，跳過 AI 審查，完全交給命運決定。`);
         }
-
         // 寫入 SQLite 歷史紀錄
         db.run(
           `INSERT INTO HistoryRecord (nickname, question, answer) VALUES (?, ?, ?)`,
